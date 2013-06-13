@@ -2,10 +2,10 @@ module IdrisWeb.Form.Form
 -- DSL to describe web forms
 
 -- Types allowed by the form handler
-data FormTy = TyStr
-            | TyInt
-            | TyBool
-            | TyNone
+data FormTy = TyStr String
+            | TyInt Int
+            | TyBool Bool
+            | TyNone ()
 
 -- Submission methods
 data Method = POST | GET
@@ -21,19 +21,24 @@ data FormElement = Text FormTy
                  | Password
                  | Submit
 
+{-
+using (ty : FormTy)
+  data FormElement : FormTy -> Type where
+    Text :  -> 
+           -}
 
 total
 interpTy : FormTy -> Type
-interpTy TyStr = String
-interpTy TyInt = Int
-interpTy TyBool = Bool
-interpTy TyNone = ()
+interpTy (TyStr _) = String
+interpTy (TyInt _) = Int
+interpTy (TyBool _) = Bool
+interpTy (TyNone _) = ()
 
 instance Eq FormTy where
-  (==) TyStr TyStr = True
-  (==) TyInt TyInt = True
-  (==) TyBool TyBool = True
-  (==) TyNone TyNone = True
+  (==) (TyStr _) (TyStr _) = True
+  (==) (TyInt _) (TyInt _) = True
+  (==) (TyBool _) (TyBool _) = True
+  (==) (TyNone _) (TyNone _) = True
   (==) _ _ = False
 
 total
@@ -72,6 +77,24 @@ myFormArgs = (_ ** [("name", Text TyStr)
 myForm : Form
 myForm = MkForm "myform" POST "form.cgi" myFormArgs
 
+{-
+data FormElement = Text FormTy
+                 | Hidden FormTy 
+                 | CheckBox
+                 | Password
+                 | Submit
+                 -}
+
+-- Serialises the form to HTML
+--serialiseForm : Form -> String
+--serialiseForm f = 
+
+total
+serialiseFormElement : (String, FormElement) -> String
+serialiseFormElement (name, (Text _)) = "<input name=\"" ++ name ++ "\" type=\"text\">"
+serialiseFormElement (name, (Hidden _)) = "<input name=\"" ++ name ++ "\" type=\"text\">" -- to get value, we may have to make a GADT
+
+
 argTy : Nat -> List (String, FormElement) -> FormTy
 argTy O ((_, fe) :: fes) = elemTy fe
 argTy (S k) [] = TyNone
@@ -80,6 +103,8 @@ argTy (S k) (fe :: fes) = argTy k fes
 -- Dependently typed stuff now:
 unitTestForm : so ( argTy (S (O)) myFormArgs == TyInt)
 unitTestForm = oh
+
+
 
 -- We want...
 --data FormData = FormData (String, Type)
