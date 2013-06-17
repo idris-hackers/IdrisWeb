@@ -101,7 +101,8 @@ sqlite_DONE : Int
 sqlite_DONE = 101 -- sqlite3_step() has finished executing 
 -- end-of-error-codes 
 
-data StepResult = StepFail
+data StepResult = Unstarted
+                | StepFail
                 | StepComplete
                 | NoMoreRows
 

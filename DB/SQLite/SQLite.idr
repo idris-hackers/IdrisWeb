@@ -51,7 +51,7 @@ data Step = ConnectionOpened
 data SQLiteRes : Step -> Type where
   OpenConn : DBPointer -> SQLiteRes s
   OpenStmt : DBPointer -> StmtPointer -> SQLiteRes s
-  --ExecutingStmt : DBPointer -> StmtPointer -> StepResult -> SQLiteRes s
+  ExecutingStmt : DBPointer -> StmtPointer -> StepResult -> SQLiteRes s
 
 data Sqlite : Effect where
   -- Opens a connection to the database
@@ -182,7 +182,7 @@ instance Handler Sqlite IO where
 
   -- Execute a prepared statement. 
   handle (OpenStmt (ValidConn c) (ValidStmt s)) ExecuteStatement k = 
-    k (OpenStmt (ValidConn c) (ValidStmt s)) ()
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) Unstarted) ()
     {-
     Looks like it doesn't work how I thought it did. The best thing to do
       right now, I think, is to just separate the finished binding stage
@@ -204,10 +204,10 @@ instance Handler Sqlite IO where
                         -}
 
   handle (OpenStmt (ValidConn c) InvalidStmt) ExecuteStatement k = 
-    k (OpenStmt (ValidConn c) InvalidStmt) ()
+    k (ExecutingStmt (ValidConn c) InvalidStmt StepFail) ()
 
   handle (OpenStmt InvalidConn x) ExecuteStatement k = 
-    k (OpenStmt InvalidConn x) () --ExecuteStatement
+    k (ExecutingStmt InvalidConn x StepFail) () --ExecuteStatement
 
   -- Bind state transition functions
   -- TODO: error checking here? should this return true / false (or some 
@@ -274,75 +274,86 @@ instance Handler Sqlite IO where
 
    
   -- Row operations
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) (GetColumnName i) k = do
+  -- These only pass the calls to the underlying library if the ExecutingStmt
+  -- is tagged with StepComplete. This means that the resource access protocol
+  -- is adhered to.
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) (GetColumnName i) k = do
     res <- mkForeign (FFun "sqlite3_column_name_idr" [FPtr, FInt] FString) c i 
-    k (OpenStmt (ValidConn c) (ValidStmt s)) res
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) res
 
-
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) (GetColumnDataSize i) k = do
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) (GetColumnDataSize i) k = do
     res <- mkForeign (FFun "sqlite3_column_bytes_idr" [FPtr, FInt] FInt) c i
-    k (OpenStmt (ValidConn c) (ValidStmt s)) res
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) res
 
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) (GetColumnInt i) k = do
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) (GetColumnInt i) k = do
     res <- mkForeign (FFun "sqlite3_column_int_idr" [FPtr, FInt] FInt) c i
-    k (OpenStmt (ValidConn c) (ValidStmt s)) res
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) res
 
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) (GetColumnText i) k = do
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) (GetColumnText i) k = do
     -- This is horrifically hacky in every single way. Fix up!
     res <- mkForeign (FFun "sqlite3_column_text_idr" [FPtr, FInt] FPtr) c i 
     -- FIXME: Make this into a maybe
     is_null <- nullPtr res
     if is_null then do --putStrLn "null ptr in gtc"
-                       k (OpenStmt (ValidConn c) (ValidStmt s)) "FIXME: Null ptr"
+                       k (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) ""
                else do res' <- mkForeign (FFun "sqlite3_column_text_idr" [FPtr, FInt] FString) c i
-                       k (OpenStmt (ValidConn c) (ValidStmt s)) res'
+                       k (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) res'
 
   -- Pass-through handlers
   -- Urgh, perhaps best to encapsulate these failures in a maybe?
   -- In fact, we *really* should. Otherwise these values may be used in further
-  -- computations in some circumstances.return
-  handle (OpenStmt InvalidConn x) (GetColumnName i) k = k (OpenStmt InvalidConn x) ""
-  handle (OpenStmt (ValidConn c) InvalidStmt) (GetColumnName i) k =
-    k (OpenStmt (ValidConn c) InvalidStmt) ""
+  -- computations in some circumstances.
 
-  handle (OpenStmt InvalidConn x) (GetColumnDataSize i) k = k (OpenStmt InvalidConn x) (-1)
-  handle (OpenStmt (ValidConn c) InvalidStmt) (GetColumnDataSize i) k =
-    k (OpenStmt (ValidConn c) InvalidStmt) (-1)
+  handle (ExecutingStmt x y z) (GetColumnName i) k = 
+    k (ExecutingStmt x y z) ""
 
-  handle (OpenStmt InvalidConn x) (GetColumnText i) k = k (OpenStmt InvalidConn x) ""
-  handle (OpenStmt (ValidConn c) InvalidStmt) (GetColumnText i) k =
-    k (OpenStmt (ValidConn c) InvalidStmt) ""
+  handle (ExecutingStmt x y z) (GetColumnDataSize i) k = 
+    k (ExecutingStmt x y z) (-1)
 
-  handle (OpenStmt InvalidConn x) (GetColumnInt i) k = k (OpenStmt InvalidConn x) (-1)
-  handle (OpenStmt (ValidConn c) InvalidStmt) (GetColumnInt i) k =
-    k (OpenStmt (ValidConn c) InvalidStmt) (-1)
+  handle (ExecutingStmt x y z) (GetColumnText i) k = 
+    k (ExecutingStmt x y z) ""
+
+  handle (ExecutingStmt x y z) (GetColumnInt i) k = 
+    k (ExecutingStmt x y z) (-1)
 
   -- Step and reset
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) RowStep k = do
+  -- Only actually call the underlying library if in either the Unstarted / StepComplete
+  -- states. Calling this in other states should fail without calling the library.
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) Unstarted) RowStep k = do
     res <- mkForeign (FFun "sqlite3_step_idr" [FPtr] FInt) c
     --putStrLn $ "Res: " ++ (show res)
-    k (OpenStmt (ValidConn c) (ValidStmt s)) (stepResult res)
+    let step_res = stepResult res
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) step_res) step_res
 
-  handle (OpenStmt (ValidConn c) InvalidStmt) RowStep k = 
-    k (OpenStmt (ValidConn c) InvalidStmt) StepFail
-  handle (OpenStmt InvalidConn x) RowStep k = k (OpenStmt InvalidConn x) StepFail
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) StepComplete) RowStep k = do
+    res <- mkForeign (FFun "sqlite3_step_idr" [FPtr] FInt) c
+    --putStrLn $ "Res: " ++ (show res)
+    let step_res = stepResult res
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) step_res) step_res
 
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) Reset k = do
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) x) RowStep k = do
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) x) StepFail
+
+  handle (ExecutingStmt x y z) RowStep k = 
+    k (ExecutingStmt x y z) StepFail
+
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) x) Reset k = do
     res <- mkForeign (FFun "sqlite3_reset_idr" [FPtr] FInt) c
-    k (OpenStmt (ValidConn c) (ValidStmt s)) (res == sqlite_OK)
+    k (ExecutingStmt (ValidConn c) (ValidStmt s) Unstarted) (res == sqlite_OK)
 
-  handle (OpenStmt (ValidConn c) InvalidStmt) Reset k = k (OpenStmt (ValidConn c) InvalidStmt) False
-  handle (OpenStmt InvalidConn x) Reset k = k (OpenStmt InvalidConn x) False
+  handle (ExecutingStmt (ValidConn c) InvalidStmt x) Reset k = 
+    k (ExecutingStmt (ValidConn c) InvalidStmt StepFail) False
+  handle (ExecutingStmt InvalidConn x y) Reset k = k (ExecutingStmt InvalidConn x StepFail) False
 
   -- Finalise statement
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) Finalise k = do
+  handle (ExecutingStmt (ValidConn c) (ValidStmt s) x) Finalise k = do
     res <- mkForeign (FFun "sqlite3_finalize_idr" [FPtr] FInt) s
     k (OpenConn (ValidConn c)) (res == sqlite_OK)
 
-  handle (OpenStmt (ValidConn c) InvalidStmt) Finalise k = 
+  handle (ExecutingStmt (ValidConn c) InvalidStmt x) Finalise k = 
     k (OpenConn (ValidConn c)) False
 
-  handle (OpenStmt InvalidConn x) Finalise k = k (OpenConn InvalidConn) False
+  handle (ExecutingStmt InvalidConn x y) Finalise k = k (OpenConn InvalidConn) False
 
 SQLITE : Type -> EFFECT
 SQLITE t = MkEff t Sqlite
