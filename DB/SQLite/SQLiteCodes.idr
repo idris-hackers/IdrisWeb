@@ -6,97 +6,108 @@ module IdrisWeb.DB.SQLite.SQLiteCodes
 SQLiteCode : Type
 SQLiteCode = Int
 
-SQLITE_OK : SQLiteCode
-SQLITE_OK = 0 -- Successful result 
+sqlite_OK : Int
+sqlite_OK = 0 -- Successful result 
 -- beginning-of-error-codes 
 
-SQLITE_ERROR : SQLiteCode
-SQLITE_ERROR = 1 -- SQL error or missing database 
+sqlite_ERROR : Int
+sqlite_ERROR = 1 -- SQL error or missing database 
 
-SQLITE_INTERNAL : SQLiteCode
-SQLITE_INTERNAL = 2 -- Internal logic error in SQLite 
+sqlite_INTERNAL : Int
+sqlite_INTERNAL = 2 -- Internal logic error in SQLite 
 
-SQLITE_PERM : SQLiteCode
-SQLITE_PERM = 3 -- Access permission denied 
+sqlite_PERM : Int
+sqlite_PERM = 3 -- Access permission denied 
 
-SQLITE_ABORT : SQLiteCode
-SQLITE_ABORT = 4 -- Callback routine requested an abort 
+sqlite_ABORT : Int
+sqlite_ABORT = 4 -- Callback routine requested an abort 
 
-SQLITE_BUSY : SQLiteCode
-SQLITE_BUSY = 5 -- The database file is locked 
+sqlite_BUSY : Int
+sqlite_BUSY = 5 -- The database file is locked 
 
-SQLITE_LOCKED : SQLiteCode
-SQLITE_LOCKED = 6 -- A table in the database is locked 
+sqlite_LOCKED : Int
+sqlite_LOCKED = 6 -- A table in the database is locked 
 
-SQLITE_NOMEM : SQLiteCode
-SQLITE_NOMEM = 7 -- A malloc() failed 
+sqlite_NOMEM : Int
+sqlite_NOMEM = 7 -- A malloc() failed 
 
-SQLITE_READONLY : SQLiteCode
-SQLITE_READONLY = 8 -- Attempt to write a readonly database 
+sqlite_READONLY : Int
+sqlite_READONLY = 8 -- Attempt to write a readonly database 
 
-SQLITE_INTERRUPT : SQLiteCode
-SQLITE_INTERRUPT = 9 -- Operation terminated by sqlite3_interrupt()
+sqlite_INTERRUPT : Int
+sqlite_INTERRUPT = 9 -- Operation terminated by sqlite3_interrupt()
 
-SQLITE_IOERR : SQLiteCode
-SQLITE_IOERR = 10 -- Some kind of disk I/O error occurred 
+sqlite_IOERR : Int
+sqlite_IOERR = 10 -- Some kind of disk I/O error occurred 
 
-SQLITE_CORRUPT : SQLiteCode
-SQLITE_CORRUPT = 11 -- The database disk image is malformed 
+sqlite_CORRUPT : Int
+sqlite_CORRUPT = 11 -- The database disk image is malformed 
 
-SQLITE_NOTFOUND : SQLiteCode
-SQLITE_NOTFOUND = 12 -- Unknown opcode in sqlite3_file_control() 
+sqlite_NOTFOUND : Int
+sqlite_NOTFOUND = 12 -- Unknown opcode in sqlite3_file_control() 
 
-SQLITE_FULL : SQLiteCode
-SQLITE_FULL = 13 -- Insertion failed because database is full 
+sqlite_FULL : Int
+sqlite_FULL = 13 -- Insertion failed because database is full 
 
-SQLITE_CANTOPEN : SQLiteCode
-SQLITE_CANTOPEN = 14 -- Unable to open the database file 
+sqlite_CANTOPEN : Int
+sqlite_CANTOPEN = 14 -- Unable to open the database file 
 
-SQLITE_PROTOCOL : SQLiteCode
-SQLITE_PROTOCOL = 15 -- Database lock protocol error 
+sqlite_PROTOCOL : Int
+sqlite_PROTOCOL = 15 -- Database lock protocol error 
 
-SQLITE_EMPTY : SQLiteCode
-SQLITE_EMPTY = 16 -- Database is empty 
+sqlite_EMPTY : Int
+sqlite_EMPTY = 16 -- Database is empty 
 
-SQLITE_SCHEMA : SQLiteCode
-SQLITE_SCHEMA = 17 -- The database schema changed 
+sqlite_SCHEMA : Int
+sqlite_SCHEMA = 17 -- The database schema changed 
 
-SQLITE_TOOBIG : SQLiteCode
-SQLITE_TOOBIG = 18 -- String or BLOB exceeds size limit 
+sqlite_TOOBIG : Int
+sqlite_TOOBIG = 18 -- String or BLOB exceeds size limit 
 
-SQLITE_CONSTRAINT : SQLiteCode
-SQLITE_CONSTRAINT = 19 -- Abort due to constraint violation 
+sqlite_CONSTRAINT : Int
+sqlite_CONSTRAINT = 19 -- Abort due to constraint violation 
 
-SQLITE_MISMATCH : SQLiteCode
-SQLITE_MISMATCH = 20 -- Data type mismatch 
+sqlite_MISMATCH : Int
+sqlite_MISMATCH = 20 -- Data type mismatch 
 
-SQLITE_MISUSE : SQLiteCode
-SQLITE_MISUSE = 21 -- Library used incorrectly 
+sqlite_MISUSE : Int
+sqlite_MISUSE = 21 -- Library used incorrectly 
 
-SQLITE_NOLFS : SQLiteCode
-SQLITE_NOLFS = 22 -- Uses OS features not supported on host 
+sqlite_NOLFS : Int
+sqlite_NOLFS = 22 -- Uses OS features not supported on host 
 
-SQLITE_AUTH : SQLiteCode
-SQLITE_AUTH = 23 -- Authorization denied 
+sqlite_AUTH : Int
+sqlite_AUTH = 23 -- Authorization denied 
 
-SQLITE_FORMAT : SQLiteCode
-SQLITE_FORMAT = 24 -- Auxiliary database format error 
+sqlite_FORMAT : Int
+sqlite_FORMAT = 24 -- Auxiliary database format error 
 
-SQLITE_RANGE : SQLiteCode
-SQLITE_RANGE = 25 -- 2nd parameter to sqlite3_bind out of range 
+sqlite_RANGE : Int
+sqlite_RANGE = 25 -- 2nd parameter to sqlite3_bind out of range 
 
-SQLITE_NOTADB : SQLiteCode
-SQLITE_NOTADB = 26 -- File opened that is not a database file 
+sqlite_NOTADB : Int
+sqlite_NOTADB = 26 -- File opened that is not a database file 
 
-SQLITE_NOTICE : SQLiteCode
-SQLITE_NOTICE = 27 -- Notifications from sqlite3_log() 
+sqlite_NOTICE : Int
+sqlite_NOTICE = 27 -- Notifications from sqlite3_log() 
 
-SQLITE_WARNING : SQLiteCode
-SQLITE_WARNING = 28 -- Warnings from sqlite3_log() 
+sqlite_WARNING : Int
+sqlite_WARNING = 28 -- Warnings from sqlite3_log() 
 
-SQLITE_ROW : SQLiteCode
-SQLITE_ROW = 100 -- sqlite3_step() has another row ready 
+sqlite_ROW : Int
+sqlite_ROW = 100 -- sqlite3_step() has another row ready 
 
-SQLITE_DONE : SQLiteCode
-SQLITE_DONE = 101 -- sqlite3_step() has finished executing 
+sqlite_DONE : Int
+sqlite_DONE = 101 -- sqlite3_step() has finished executing 
 -- end-of-error-codes 
+
+data StepResult = StepFail
+                | StepComplete
+                | NoMoreRows
+
+
+stepResult : Int -> StepResult 
+stepResult sqlite_ROW = StepComplete -- step complete, but more data available
+stepResult sqlite_DONE = NoMoreRows -- statement has been fully executed
+stepResult _ = StepFail -- an error occurred
+
