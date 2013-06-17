@@ -43,7 +43,7 @@ data Step = ConnectionOpened
           | PreparedStatementOpen
           | PreparedStatementBinding
           | PreparedStatementBound
-          | PreparedStatementExecuted
+          | PreparedStatementExecuting
 --          | PreparedStatementResultsFetched
 
 
@@ -51,6 +51,7 @@ data Step = ConnectionOpened
 data SQLiteRes : Step -> Type where
   OpenConn : DBPointer -> SQLiteRes s
   OpenStmt : DBPointer -> StmtPointer -> SQLiteRes s
+  --ExecutingStmt : DBPointer -> StmtPointer -> StepResult -> SQLiteRes s
 
 data Sqlite : Effect where
   -- Opens a connection to the database
@@ -93,15 +94,15 @@ data Sqlite : Effect where
   FinishBind : Sqlite (SQLiteRes PreparedStatementBinding) (SQLiteRes PreparedStatementBound) Bool
 
   -- Executes the given prepared statement
-  ExecuteStatement : Sqlite (SQLiteRes PreparedStatementBound) (SQLiteRes PreparedStatementExecuted) Bool
+  ExecuteStatement : Sqlite (SQLiteRes PreparedStatementBound) (SQLiteRes PreparedStatementExecuting) ()
 
   -- Fetches the results of the previously-executed query
-  {-FetchResults : Sqlite (SQLiteRes PreparedStatementExecuted) 
+  {-FetchResults : Sqlite (SQLiteRes PreparedStatementExecuting) 
                         (SQLiteRes PreparedStatementResultsFetched) 
                         Table
                         -}
   -- Disposes of a prepared statement
-  Finalise : Sqlite (SQLiteRes PreparedStatementExecuted) (SQLiteRes ConnectionOpened) Bool
+  Finalise : Sqlite (SQLiteRes PreparedStatementExecuting) (SQLiteRes ConnectionOpened) Bool
 
 
   ----- Operations on result sets.
@@ -110,14 +111,14 @@ data Sqlite : Effect where
 
   -- These operations are done performed on the current row.
   -- Given a column index, gets the name of the column
-  GetColumnName : Int -> Sqlite (SQLiteRes PreparedStatementExecuted) 
-                                (SQLiteRes PreparedStatementExecuted)
+  GetColumnName : Int -> Sqlite (SQLiteRes PreparedStatementExecuting) 
+                                (SQLiteRes PreparedStatementExecuting)
                                 String
 
 
   -- Given a column index, returns the size in bytes
-  GetColumnDataSize : Int -> Sqlite (SQLiteRes PreparedStatementExecuted)
-                                    (SQLiteRes PreparedStatementExecuted)
+  GetColumnDataSize : Int -> Sqlite (SQLiteRes PreparedStatementExecuting)
+                                    (SQLiteRes PreparedStatementExecuting)
                                     Int
 
 
@@ -125,25 +126,25 @@ data Sqlite : Effect where
   -- think this entirely makes sense. Will come back to it, omitting for now.
 
   -- Given a column index, returns the data as an Idris string.
-  GetColumnText : Int -> Sqlite (SQLiteRes PreparedStatementExecuted)
-                                (SQLiteRes PreparedStatementExecuted)
+  GetColumnText : Int -> Sqlite (SQLiteRes PreparedStatementExecuting)
+                                (SQLiteRes PreparedStatementExecuting)
                                 String
 
   -- Given a column index, returns the data as an Idris integer.
-  GetColumnInt : Int -> Sqlite (SQLiteRes PreparedStatementExecuted)
-                               (SQLiteRes PreparedStatementExecuted)
+  GetColumnInt : Int -> Sqlite (SQLiteRes PreparedStatementExecuting)
+                               (SQLiteRes PreparedStatementExecuting)
                                Int
 
   -- Advance the row pointer
   -- TODO: We will get a particular status code when we reach the end of the
   --       results. Ideally, this should be encoded as a state to ensure that
   --       step is not called once all rows have been seen.
-  RowStep : Sqlite (SQLiteRes PreparedStatementExecuted)
-                   (SQLiteRes PreparedStatementExecuted)
+  RowStep : Sqlite (SQLiteRes PreparedStatementExecuting)
+                   (SQLiteRes PreparedStatementExecuting)
                    StepResult
 
-  Reset : Sqlite (SQLiteRes PreparedStatementExecuted)
-                 (SQLiteRes PreparedStatementExecuted)
+  Reset : Sqlite (SQLiteRes PreparedStatementExecuting)
+                 (SQLiteRes PreparedStatementExecuting)
                  Bool
 
 
@@ -180,7 +181,15 @@ instance Handler Sqlite IO where
                      else k (OpenStmt (ValidConn c) (InvalidStmt)) False
 
   -- Execute a prepared statement. 
-  handle (OpenStmt (ValidConn c) (ValidStmt s)) ExecuteStatement k = do
+  handle (OpenStmt (ValidConn c) (ValidStmt s)) ExecuteStatement k = 
+    k (OpenStmt (ValidConn c) (ValidStmt s)) ()
+    {-
+    Looks like it doesn't work how I thought it did. The best thing to do
+      right now, I think, is to just separate the finished binding stage
+      with a 'currently executing' stage. 
+
+    I might remove this stage later though.
+    do
     x <- mkForeign (FFun "exec_db" [FPtr] FInt) s
     -- Ideally, an execution failure should debar us from attempting 
     -- to retrieve the results. 
@@ -189,15 +198,16 @@ instance Handler Sqlite IO where
     -- TODO: Fix this, possibly by having another type of StmtPointer which
     -- signifies that the results have been tainted by some failure,
     -- but that the pointer is still active and needs to be freed.
+    putStrLn ("SQLite status code: " ++ show x)
     if (x == sqlite_OK) then k (OpenStmt (ValidConn c) (ValidStmt s)) True
                         else k (OpenStmt (ValidConn c) (ValidStmt s)) False
-
+                        -}
 
   handle (OpenStmt (ValidConn c) InvalidStmt) ExecuteStatement k = 
-    k (OpenStmt (ValidConn c) InvalidStmt) False
+    k (OpenStmt (ValidConn c) InvalidStmt) ()
 
   handle (OpenStmt InvalidConn x) ExecuteStatement k = 
-    k (OpenStmt InvalidConn x) False --ExecuteStatement
+    k (OpenStmt InvalidConn x) () --ExecuteStatement
 
   -- Bind state transition functions
   -- TODO: error checking here? should this return true / false (or some 
@@ -278,13 +288,19 @@ instance Handler Sqlite IO where
     k (OpenStmt (ValidConn c) (ValidStmt s)) res
 
   handle (OpenStmt (ValidConn c) (ValidStmt s)) (GetColumnText i) k = do
-    res <- mkForeign (FFun "sqlite3_column_text_idr" [FPtr, FInt] FString) c i 
-    k (OpenStmt (ValidConn c) (ValidStmt s)) res
+    -- This is horrifically hacky in every single way. Fix up!
+    res <- mkForeign (FFun "sqlite3_column_text_idr" [FPtr, FInt] FPtr) c i 
+    -- FIXME: Make this into a maybe
+    is_null <- nullPtr res
+    if is_null then do --putStrLn "null ptr in gtc"
+                       k (OpenStmt (ValidConn c) (ValidStmt s)) "FIXME: Null ptr"
+               else do res' <- mkForeign (FFun "sqlite3_column_text_idr" [FPtr, FInt] FString) c i
+                       k (OpenStmt (ValidConn c) (ValidStmt s)) res'
 
   -- Pass-through handlers
   -- Urgh, perhaps best to encapsulate these failures in a maybe?
   -- In fact, we *really* should. Otherwise these values may be used in further
-  -- computations in some circumstances.
+  -- computations in some circumstances.return
   handle (OpenStmt InvalidConn x) (GetColumnName i) k = k (OpenStmt InvalidConn x) ""
   handle (OpenStmt (ValidConn c) InvalidStmt) (GetColumnName i) k =
     k (OpenStmt (ValidConn c) InvalidStmt) ""
@@ -304,6 +320,7 @@ instance Handler Sqlite IO where
   -- Step and reset
   handle (OpenStmt (ValidConn c) (ValidStmt s)) RowStep k = do
     res <- mkForeign (FFun "sqlite3_step_idr" [FPtr] FInt) c
+    --putStrLn $ "Res: " ++ (show res)
     k (OpenStmt (ValidConn c) (ValidStmt s)) (stepResult res)
 
   handle (OpenStmt (ValidConn c) InvalidStmt) RowStep k = 
@@ -320,12 +337,12 @@ instance Handler Sqlite IO where
   -- Finalise statement
   handle (OpenStmt (ValidConn c) (ValidStmt s)) Finalise k = do
     res <- mkForeign (FFun "sqlite3_finalize_idr" [FPtr] FInt) s
-    k (OpenStmt (ValidConn c) (ValidStmt s)) (res == sqlite_OK)
+    k (OpenConn (ValidConn c)) (res == sqlite_OK)
 
   handle (OpenStmt (ValidConn c) InvalidStmt) Finalise k = 
-    k (OpenStmt (ValidConn c) InvalidStmt) False
+    k (OpenConn (ValidConn c)) False
 
-  handle (OpenStmt InvalidConn x) Finalise k = k (OpenStmt InvalidConn x) False
+  handle (OpenStmt InvalidConn x) Finalise k = k (OpenConn InvalidConn) False
 
 SQLITE : Type -> EFFECT
 SQLITE t = MkEff t Sqlite
@@ -351,8 +368,10 @@ bindInt pos i = (BindInt pos i)
 bindFloat : ArgPos -> Float -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
 bindFloat pos i = (BindFloat pos i)
 
-bindText : ArgPos -> String -> Int -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
-bindText pos str len = (BindText pos str len)
+bindText : ArgPos -> String -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
+bindText pos str = (BindText pos str str_len)
+  where str_len : Int
+        str_len = cast (length str)
 
 bindNull : ArgPos -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
 bindNull pos = (BindNull pos)
@@ -361,32 +380,59 @@ finishBind : EffM m [SQLITE (SQLiteRes PreparedStatementBinding)]
                     [SQLITE (SQLiteRes PreparedStatementBound)] Bool
 finishBind = FinishBind
 
-executeStatement : EffM m [SQLITE (SQLiteRes PreparedStatementBound)] 
-                          [SQLITE (SQLiteRes PreparedStatementExecuted)] Bool
-executeStatement = ExecuteStatement
+beginExecution : EffM m [SQLITE (SQLiteRes PreparedStatementBound)] 
+                        [SQLITE (SQLiteRes PreparedStatementExecuting)] ()
+beginExecution = ExecuteStatement
 
-finaliseStatement : EffM m [SQLITE (SQLiteRes PreparedStatementExecuted)]
+finaliseStatement : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)]
                            [SQLITE (SQLiteRes ConnectionOpened)]
                            Bool
 finaliseStatement = Finalise
 
-getColumnName : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuted)] String
+getColumnName : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] String
 getColumnName pos = (GetColumnName pos)
 
-getColumnDataSize : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuted)] Int
+getColumnDataSize : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] Int
 getColumnDataSize pos = (GetColumnDataSize pos)
 
-getColumnText : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuted)] String
+getColumnText : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] String
 getColumnText pos = (GetColumnText pos)
 
-getColumnInt : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuted)] Int
+getColumnInt : Int -> Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] Int
 getColumnInt pos = (GetColumnInt pos)
 
-nextRow : Eff m [SQLITE (SQLiteRes PreparedStatementExecuted)] StepResult
+nextRow : Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] StepResult
 nextRow = RowStep
 
-resetPos : Eff m [SQLITE (SQLiteRes PreparedStatementExecuted)] Bool
+resetPos : Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] Bool
 resetPos = Reset
 
 -- Utility functions to help handle failure
+-- TODO: These errors should ideally be encoded as ADTs
+connFail : EffM m [SQLITE (SQLiteRes ConnectionOpened)] [SQLITE ()] String
+connFail = do closeDB
+              return "Error connecting to database."
 
+stmtFail : EffM m [SQLITE (SQLiteRes PreparedStatementOpen)] [SQLITE ()] String
+stmtFail = do
+  -- These will all fall through without having any effect.
+  -- Right Way To Do It?
+  startBind
+  finishBind
+  beginExecution
+  finaliseStatement
+  closeDB -- Close the connection
+  return "Error preparing statement"
+
+bindFail : EffM m [SQLITE (SQLiteRes PreparedStatementBound)] [SQLITE ()] String
+bindFail = do
+  beginExecution
+  finaliseStatement
+  closeDB
+  return "Error binding to statement"
+
+executeFail : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] String
+executeFail = do
+  finaliseStatement
+  closeDB
+  return "Error executing statement"

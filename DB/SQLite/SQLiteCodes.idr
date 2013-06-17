@@ -106,8 +106,10 @@ data StepResult = StepFail
                 | NoMoreRows
 
 
+-- FIXME: For some reason, pattern matching doesn't work
+-- when using the 
 stepResult : Int -> StepResult 
-stepResult sqlite_ROW = StepComplete -- step complete, but more data available
-stepResult sqlite_DONE = NoMoreRows -- statement has been fully executed
+stepResult 100 = StepComplete -- step complete, but more data available
+stepResult 101 = NoMoreRows -- statement has been fully executed
 stepResult _ = StepFail -- an error occurred
 
