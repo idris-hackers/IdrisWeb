@@ -141,6 +141,9 @@ data Cgi : Effect where
   -- Write content, transition to content written state
   WriteContent : Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
 
+  -- Add cookie
+  SetCookies : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
+
 -- Creation of the concrete effect
 CGI t = MkEff t Cgi
 
