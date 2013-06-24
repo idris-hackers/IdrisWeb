@@ -1,6 +1,8 @@
 module IdrisWeb.Form.FormEffect
 import Effects
 
+%access public -- utter laziness, fixme
+
 data FormTy = FormString
             | FormInt
 
@@ -13,13 +15,17 @@ interpFnTy tys = interpFnTy' (reverse tys)
   where interpFnTy' : Vect FormTy n -> Type
         interpFnTy' [] = () -- TODO: should be form effect stuff here
         interpFnTy' (x :: xs) = interpFormTy x -> interpFnTy' xs
-        
+
+
 interpCheckedFnTy : Vect FormTy n -> Type
 interpCheckedFnTy tys = interpCheckedFnTy' (reverse tys)
   where interpCheckedFnTy' : Vect FormTy n -> Type
         interpCheckedFnTy' [] = () -- TODO: should be form effect stuff here
         interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) -> interpCheckedFnTy' xs
 
+showFormVal : (fty : FormTy) -> interpFormTy fty -> String
+showFormVal FormString s = s
+showFormVal FormInt i = show i
 {-
 serialiseFnType : Type -> String
 serialiseFnType ((Maybe String) -> y) = ?mv1 -- "Maybe String -> " ++ serialiseFnType y
@@ -32,12 +38,14 @@ using (G : Vect FormTy n)
     Nil : Env Nil
     (::) : interpFormTy a -> Env G -> Env (a :: G) 
 
+  data FormRes : Vect FormTy n -> Type where
+    FR : Nat -> Env G -> String -> FormRes G
+{- 
+Actually not sure we need this
   data HasType : (i : Fin n) -> Vect FormTy n -> FormTy -> Type where
       stop : HasType fO (t :: G) t
       pop  : HasType k G t -> HasType (fS k) (u :: G) t
 
-  data FormRes : Vect FormTy n -> Type where
-    FR : Env G -> FormRes G
 
   lookup : HasType i G t -> Env G -> interpFormTy t
   lookup stop    (x :: xs) = x
@@ -46,18 +54,21 @@ using (G : Vect FormTy n)
   update : HasType i G t -> Env G -> interpFormTy t -> Env G
   update stop (x :: xs) newval = (newval :: xs)
   update (pop k) (x :: xs) newval = x :: (update k xs newval)
-
-
-
+  -}
+  
   data Form : Effect where
-    AddTextBox : (fty : FormTy) -> (val_ty : interpFormTy fty) -> Form (FormRes G) (FormRes (fty :: G)) () -- prepending is better, todo: neaten
+    AddTextBox : (fty : FormTy) -> 
+                 (val_ty : interpFormTy fty) -> 
+                 Form (FormRes G) (FormRes (fty :: G)) () 
     Submit : interpCheckedFnTy G -> Form (FormRes G) (FormRes []) String
 
-  instance Handler Form IO where
-    handle (FR vals) (Submit fn) k = do
-      k (FR []) "Serialised stuff"
-    handle (FR vals) (AddTextBox fty val) k = do
-      k (FR (val :: vals)) ()
+  instance Handler Form m where
+    handle (FR len vals ser_str) (Submit fn) k = do
+      k (FR O [] ser_str) (ser_str ++ "\n" ++ "serialised closure / submit button stuff here\n</form>")
+    handle (FR len vals ser_str) (AddTextBox fty val) k = do
+      -- <input type="text" name="inputx" value="val">
+      k (FR (S len) (val :: vals) 
+        (ser_str ++ "<input name=\"inp1" ++ (show $ len)  ++ "\" value=\"" ++ (showFormVal fty val) ++ "\">\n")) ()
 
   FORM : Type -> EFFECT
   FORM t = MkEff t Form
@@ -68,14 +79,12 @@ using (G : Vect FormTy n)
   addSubmit : (interpCheckedFnTy G) -> EffM m [FORM (FormRes G)] [FORM (FormRes [])] String
   addSubmit fn = (Submit fn)
 
-  sampleHandler : Maybe String -> Maybe Int -> ()
-  sampleHandler name age = ()
+UserForm : Type
+UserForm = Eff id [FORM (FormRes [])] String -- Making a form is a pure function (atm)
 
+SerialisedForm : Type
+SerialisedForm = String
 
-  -- Effects.>>= : (EffM m xs xs' a) -> (a -> EffM m xs' xs'' b) -> EffM xs xs'' b
-  -- addTextBox str >>= addTextBox int : EffM m [] [FormString] () -> EffM m [FormString] [FormInt, FormString] () -> EffM m [] [FormInt, FormString]
-  myForm : Eff m [FORM (FormRes [])] String
-  myForm = do addTextBox FormString "Simon"
-              addTextBox FormInt 21
-              addSubmit sampleHandler
-    --(addTextBox FormString "Simon") >>= ((\_ => addTextBox FormInt 21) >>= (\_ => addSubmit sampleHandler))
+-- TODO: Action
+mkForm : String -> UserForm -> SerialisedForm
+mkForm name frm = runPure [FR O [] ("<form name=\"" ++ name ++ "\" action=\"\" method=\"POST\">\n")] frm
