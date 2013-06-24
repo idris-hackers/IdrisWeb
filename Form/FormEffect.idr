@@ -16,11 +16,13 @@ interpFnTy tys = interpFnTy' (reverse tys)
         interpFnTy' [] = () -- TODO: should be form effect stuff here
         interpFnTy' (x :: xs) = interpFormTy x -> interpFnTy' xs
 
+FormHandler : List EFFECT -> Type -> Type
+FormHandler effs t = Eff IO effs t
 
-interpCheckedFnTy : Vect FormTy n -> Type
-interpCheckedFnTy tys = interpCheckedFnTy' (reverse tys)
+interpCheckedFnTy : Vect FormTy n -> List EFFECT -> Type -> Type
+interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
   where interpCheckedFnTy' : Vect FormTy n -> Type
-        interpCheckedFnTy' [] = () -- TODO: should be form effect stuff here
+        interpCheckedFnTy' [] = FormHandler effs t
         interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) -> interpCheckedFnTy' xs
 
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String
@@ -60,10 +62,11 @@ Actually not sure we need this
     AddTextBox : (fty : FormTy) -> 
                  (val_ty : interpFormTy fty) -> 
                  Form (FormRes G) (FormRes (fty :: G)) () 
-    Submit : interpCheckedFnTy G -> Form (FormRes G) (FormRes []) String
+    Submit : interpCheckedFnTy G effs t -> (effs : List EFFECT) -> (t : Type) -> 
+             Form (FormRes G) (FormRes []) String
 
   instance Handler Form m where
-    handle (FR len vals ser_str) (Submit fn) k = do
+    handle (FR len vals ser_str) (Submit fn effs t) k = do
       k (FR O [] ser_str) (ser_str ++ "\n" ++ "serialised closure / submit button stuff here\n</form>")
     handle (FR len vals ser_str) (AddTextBox fty val) k = do
       -- <input type="text" name="inputx" value="val">
@@ -76,8 +79,8 @@ Actually not sure we need this
   addTextBox : (fty : FormTy) -> (interpFormTy fty) -> EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
   addTextBox ty val = (AddTextBox ty val)
 
-  addSubmit : (interpCheckedFnTy G) -> EffM m [FORM (FormRes G)] [FORM (FormRes [])] String
-  addSubmit fn = (Submit fn)
+  addSubmit : (interpCheckedFnTy G effs t) -> (effs : List EFFECT) -> (t : Type) -> EffM m [FORM (FormRes G)] [FORM (FormRes [])] String
+  addSubmit fn effs t = (Submit fn effs t)
 
 UserForm : Type
 UserForm = Eff id [FORM (FormRes [])] String -- Making a form is a pure function (atm)

@@ -1,11 +1,12 @@
 module Main
 import FormEffect
 import Effects
+import SQLite
 
 
-
-sampleHandler : Maybe String -> Maybe Int -> ()
-sampleHandler name age = ()
+-- We could also have SQLITE, or CGI here perhaps
+sampleHandler : Maybe String -> Maybe Int -> FormHandler [SQLITE ()] ()
+sampleHandler name age = return ()
 
 
 -- Effects.>>= : (EffM m xs xs' a) -> (a -> EffM m xs' xs'' b) -> EffM xs xs'' b
@@ -13,7 +14,7 @@ sampleHandler name age = ()
 myForm : UserForm
 myForm = do addTextBox FormString "Simon"
             addTextBox FormInt 21
-            addSubmit sampleHandler
+            addSubmit sampleHandler [SQLITE ()] ()
   --(addTextBox FormString "Simon") >>= ((\_ => addTextBox FormInt 21) >>= (\_ => addSubmit sampleHandler))
 
 
