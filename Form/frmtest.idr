@@ -5,7 +5,7 @@ import SQLite
 
 
 -- We could also have SQLITE, or CGI here perhaps
-sampleHandler : Maybe String -> Maybe Int -> FormHandler [SQLITE ()] ()
+sampleHandler : Maybe String -> Maybe String -> FormHandler [SQLITE ()] ()
 sampleHandler name age = return ()
 
 

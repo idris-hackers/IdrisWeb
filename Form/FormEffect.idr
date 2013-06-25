@@ -29,35 +29,16 @@ interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String
 showFormVal FormString s = s
 showFormVal FormInt i = show i
-{-
-serialiseFnType : Type -> String
-serialiseFnType ((Maybe String) -> y) = ?mv1 -- "Maybe String -> " ++ serialiseFnType y
-serialiseFnType ((Maybe Int) -> y) = ?mv2 -- "Maybe Int -> " ++ serialiseFnType y
-serialiseFnType _ = ?mv3 -- "booo"
--}
--- data Step : 
+
 using (G : Vect FormTy n)
+  private
   data Env : Vect FormTy n -> Type where
     Nil : Env Nil
     (::) : interpFormTy a -> Env G -> Env (a :: G) 
 
   data FormRes : Vect FormTy n -> Type where
     FR : Nat -> Env G -> String -> FormRes G
-{- 
-Actually not sure we need this
-  data HasType : (i : Fin n) -> Vect FormTy n -> FormTy -> Type where
-      stop : HasType fO (t :: G) t
-      pop  : HasType k G t -> HasType (fS k) (u :: G) t
 
-
-  lookup : HasType i G t -> Env G -> interpFormTy t
-  lookup stop    (x :: xs) = x
-  lookup (pop k) (x :: xs) = lookup k xs
-
-  update : HasType i G t -> Env G -> interpFormTy t -> Env G
-  update stop (x :: xs) newval = (newval :: xs)
-  update (pop k) (x :: xs) newval = x :: (update k xs newval)
-  -}
   
   data Form : Effect where
     AddTextBox : (fty : FormTy) -> 
@@ -72,7 +53,7 @@ Actually not sure we need this
     handle (FR len vals ser_str) (AddTextBox fty val) k = do
       -- <input type="text" name="inputx" value="val">
       k (FR (S len) (val :: vals) 
-        (ser_str ++ "<input name=\"inp1" ++ (show $ len)  ++ "\" value=\"" ++ (showFormVal fty val) ++ "\">\n")) ()
+        (ser_str ++ "<input name=\"inp" ++ (show $ len)  ++ "\" value=\"" ++ (showFormVal fty val) ++ "\">\n")) ()
 
   FORM : Type -> EFFECT
   FORM t = MkEff t Form
@@ -92,3 +73,10 @@ SerialisedForm = String
 -- TODO: Action
 mkForm : String -> UserForm -> SerialisedForm
 mkForm name frm = runPure [FR O [] ("<form name=\"" ++ name ++ "\" action=\"\" method=\"POST\">\n")] frm
+
+
+
+{- 
+Actually not sure we need this
+
+  -}
