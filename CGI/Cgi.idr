@@ -279,11 +279,11 @@ runCGI' action = do initialise action
                     -- Write out the content
                     writeContent
                     -- Finally, return the result
-                    return res 
+                    pure res 
 
 public
 runCGI : CGIProg a -> IO a
 runCGI act = do result <- run [()] (runCGI' act)
-                return result
+                pure result
 
 

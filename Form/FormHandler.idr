@@ -13,7 +13,7 @@ Handler : Type
 Handler = List FormTy -> List EFFECT -> FormTy -> Type
 
 mkHandlerFn : List FormTy -> List EFFECT -> FormTy -> Type
-mkHandlerFn [] effs ty = Maybe (FormHandler effs (interpFormTy ty))
+mkHandlerFn [] effs ty = FormHandler effs (interpFormTy ty)
 mkHandlerFn (x :: xs) effs ty = Maybe (interpFormTy x) -> mkHandlerFn xs effs ty
 
 using (G : Vect (List FormTy -> List EFFECT -> FormTy -> Type) n)

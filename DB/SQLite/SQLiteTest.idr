@@ -20,17 +20,17 @@ testInsert name age = do
                                   beginExecution
                                   finaliseStatement
                                   closeDB
-                                  Effects.return $ Right ()
+                                  Effects.pure $ Right ()
                                 else do
                                   err <- bindFail
-                                  Effects.return $ Left err
+                                  Effects.pure $ Left err
                                   
                   else do
                     err <- stmtFail
-                    Effects.return $ Left err
+                    Effects.pure $ Left err
                 else do
                   err <- connFail
-                  Effects.return $ Left err
+                  Effects.pure $ Left err
 
 -- Why is this not a library function? O.o
 mapM : Monad m => (a -> m b) -> List a -> m (List b)
@@ -45,9 +45,9 @@ collectResults = do
       StepComplete => do name <- getColumnText 1
                          age <- getColumnInt 2
                          xs <- collectResults
-                         Effects.return $ (name, age) :: xs
-      NoMoreRows => Effects.return []
-      StepFail => Effects.return []
+                         Effects.pure $ (name, age) :: xs
+      NoMoreRows => Effects.pure []
+      StepFail => Effects.pure []
 
 
 
@@ -64,18 +64,18 @@ testSelect = do
       results <- collectResults
       finaliseStatement
       closeDB
-      Effects.return $ Right results
+      Effects.pure $ Right results
     else do err <- stmtFail
-            Effects.return $ Left err
+            Effects.pure $ Left err
   else do err <- connFail
-          Effects.return $ Left err
+          Effects.pure $ Left err
                                        
 main : IO ()
 main = do select_res <- run [()] testSelect
           case select_res of
                Left err => putStrLn $ "Error: " ++ err
                Right results => do mapM (putStrLn . show) results
-                                   return ()
+                                   pure ()
   --do res <- run [()] (testInsert "SimonJF" 21)
          -- case res of Left err => putStrLn $ "Error inserting: " ++ err
          --             Right () => putStrLn "Operation completed successfully!"

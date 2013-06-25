@@ -5,9 +5,9 @@ module IdrisWeb.DB.SQLite.SQLite
 import Effects
 import SQLiteCodes
 
-%lib "sqlite3"
-%link "sqlite3api.o"
-%include "sqlite3api.h"
+%link C "sqlite3api.o"
+%include C "sqlite3api.h"
+%lib C "sqlite3"
 
 %access public
 
@@ -380,8 +380,8 @@ bindFloat : ArgPos -> Float -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding
 bindFloat pos i = (BindFloat pos i)
 
 bindText : ArgPos -> String -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
-bindText pos str = (BindText pos str str_len)
-  where str_len : Int
+bindText pos str = (BindText pos str (fromInteger str_len))
+  where str_len : Integer
         str_len = cast (length str)
 
 bindNull : ArgPos -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
@@ -422,7 +422,7 @@ resetPos = Reset
 -- TODO: These errors should ideally be encoded as ADTs
 connFail : EffM m [SQLITE (SQLiteRes ConnectionOpened)] [SQLITE ()] String
 connFail = do closeDB
-              return "Error connecting to database."
+              pure "Error connecting to database."
 
 stmtFail : EffM m [SQLITE (SQLiteRes PreparedStatementOpen)] [SQLITE ()] String
 stmtFail = do
@@ -433,17 +433,17 @@ stmtFail = do
   beginExecution
   finaliseStatement
   closeDB -- Close the connection
-  return "Error preparing statement"
+  pure "Error preparing statement"
 
 bindFail : EffM m [SQLITE (SQLiteRes PreparedStatementBound)] [SQLITE ()] String
 bindFail = do
   beginExecution
   finaliseStatement
   closeDB
-  return "Error binding to statement"
+  pure "Error binding to statement"
 
 executeFail : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] String
 executeFail = do
   finaliseStatement
   closeDB
-  return "Error executing statement"
+  pure "Error executing statement"
