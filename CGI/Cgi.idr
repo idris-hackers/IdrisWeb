@@ -9,6 +9,7 @@ import CgiUtils
 
 
 -- Information passed by CGI
+public
 record CGIInfo : Type where
        CGIInf : (GET : Vars) ->
                 (POST : Vars) ->
@@ -24,7 +25,7 @@ CGI : Type -> EFFECT
 
 -- Type of user-defined CGI Actions
 public
-CGIProg : Type -> Type
+CGIProg : List EFFECT -> Type -> Type
 
 -- States in the state machine
 public
@@ -43,7 +44,7 @@ data InitialisedCGI : Step -> Type where
   ICgi : CGIInfo -> InitialisedCGI s
 
 
-CGIProg a = Eff IO [CGI (InitialisedCGI TaskRunning)] a
+CGIProg effs a = Eff IO (CGI (InitialisedCGI TaskRunning) :: effs) a
 
 
 
@@ -140,9 +141,15 @@ data Cgi : Effect where
   -- TODO: Add expiry date in here once I've finished the basics
   SetCookie : String -> String -> {- Date -> -} Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
+  -- Run the user-specified action
+  RunAction : Env IO (CGI (InitialisedCGI TaskRunning) :: effs) -> CGIProg effs a -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) a
+
 -- Creation of the concrete effect
 CGI t = MkEff t Cgi
 
+abstract
+runAction : Env IO (CGI (InitialisedCGI TaskRunning) :: effs) -> CGIProg effs a -> Eff m [CGI (InitialisedCGI TaskRunning)] a
+runAction init_effs act = (RunAction init_effs act)
 
 getInfo : Eff m [CGI (InitialisedCGI TaskRunning)] CGIInfo
 getInfo = GetInfo
@@ -269,26 +276,30 @@ instance Handler Cgi IO where
                                                let new_info = addHeaders set_cookie_header st
                                                k (ICgi new_info) ()
 
+-- TODO: runEnv
+  handle (ICgi st) (RunAction effs act) k = do (((ICgi st') :: env'), result) <- runEnv ((ICgi st) :: effs) act -- (effs ++ (ICgi st)) act
+                                               k (ICgi st') result
+
 -- Internal mechanism to run the user-specified action
 private
-runCGI' : CGIProg a -> EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
-runCGI' action = do initialise 
-                    -- Transition to TaskRunning
-                    startTask
-                    -- Perform the user-defined action and collect the result
-                    res <- action
-                    -- Transition to TaskComplete
-                    finishTask
-                    -- Write out the headers
-                    writeHeaders
-                    -- Write out the content
-                    writeContent
-                    -- Finally, return the result
-                    pure res 
+runCGI' : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> CGIProg effs a -> EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
+runCGI' init_effs action = do initialise 
+                              -- Transition to TaskRunning
+                              startTask
+                              -- Perform the user-defined action and collect the result
+                              res <- runAction init_effs action
+                              -- Transition to TaskComplete
+                              finishTask
+                              -- Write out the headers
+                              writeHeaders
+                              -- Write out the content
+                              writeContent
+                              -- Finally, return the result
+                              pure res 
 
 public
-runCGI : CGIProg a -> IO a
-runCGI act = do result <- run [()] (runCGI' act)
-                pure result
+runCGI : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> CGIProg effs a -> IO a
+runCGI init_effs act = do result <- run [()] (runCGI' init_effs act)
+                          pure result
 
 

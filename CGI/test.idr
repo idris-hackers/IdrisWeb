@@ -1,9 +1,11 @@
 module Main
 import Cgi
 import Effects
+import Effect.StdIO
 
-doCGIStuff : CGIProg Int 
+doCGIStuff : CGIProg [STDIO] Int 
 doCGIStuff = do output "Hello, world!\n"
+                putStr "IO effect says hi\n"
                 pinesvar <- queryPostVar "pines"
                 setCookie "pines" "pinesington"
                 case pinesvar of
@@ -14,6 +16,6 @@ doCGIStuff = do output "Hello, world!\n"
 
 main : IO ()
 main = do
-  runCGI doCGIStuff
+  runCGI [ICgi (CGIInf [] [] [] "" "" "this shouldn't happen"), () ] doCGIStuff
   pure ()
 
