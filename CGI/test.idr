@@ -5,6 +5,7 @@ import Effects
 doCGIStuff : CGIProg Int 
 doCGIStuff = do output "Hello, world!\n"
                 pinesvar <- queryPostVar "pines"
+                setCookie "pines" "pinesington"
                 case pinesvar of
                     Just str => do output ("Pines var: " ++ str ++ "\n")
                                    pure 0

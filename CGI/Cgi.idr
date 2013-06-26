@@ -26,11 +26,6 @@ CGI : Type -> EFFECT
 public
 CGIProg : Type -> Type
 
-public
-record CGIState : Type where
-       CGISt : (CgiInfo : CGIInfo) ->
-               (Action : CGIProg a) -> CGIState
-
 -- States in the state machine
 public
 data Step   = Initialised 
@@ -45,7 +40,7 @@ data Step   = Initialised
 -- Data type representing an initialised CGI script
 public
 data InitialisedCGI : Step -> Type where
-  ICgi : CGIState -> InitialisedCGI s
+  ICgi : CGIInfo -> InitialisedCGI s
 
 
 CGIProg a = Eff IO [CGI (InitialisedCGI TaskRunning)] a
@@ -127,7 +122,7 @@ data Cgi : Effect where
   Flush : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
   -- Initialise the internal CGI State
-  Init : CGIProg a -> Cgi () (InitialisedCGI Initialised) ()
+  Init : Cgi () (InitialisedCGI Initialised) ()
 
   -- Transition to task started state
   StartRun : Cgi (InitialisedCGI Initialised) (InitialisedCGI TaskRunning) ()
@@ -142,7 +137,8 @@ data Cgi : Effect where
   WriteContent : Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
 
   -- Add cookie
-  SetCookies : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
+  -- TODO: Add expiry date in here once I've finished the basics
+  SetCookie : String -> String -> {- Date -> -} Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
 -- Creation of the concrete effect
 CGI t = MkEff t Cgi
@@ -186,8 +182,8 @@ abstract
 flush : Eff m [CGI (InitialisedCGI TaskRunning)] ()
 flush = Flush
 
-initialise : CGIProg a -> EffM m [CGI ()] [CGI (InitialisedCGI Initialised)] ()
-initialise act = (Init act)
+initialise : EffM m [CGI ()] [CGI (InitialisedCGI Initialised)] ()
+initialise = Init
 
 startTask : EffM m [CGI (InitialisedCGI Initialised)] [CGI (InitialisedCGI TaskRunning)] ()
 startTask = StartRun
@@ -202,31 +198,35 @@ writeContent : EffM m [CGI (InitialisedCGI HeadersWritten)] [CGI (InitialisedCGI
 writeContent = WriteContent
 
 abstract
+setCookie : String -> String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
+setCookie name val = (SetCookie name val)
+
+abstract
 output : String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
 output s = (OutputData s)
 
 
 -- Handler for CGI in the IO context
 instance Handler Cgi IO where
-  handle (ICgi st) GetInfo k = k (ICgi st) (CgiInfo st)
+  --handle (ICgi st) GetInfo k = k (ICgi st) (CgiInfo st)
 
-  handle (ICgi st) GETVars k = k (ICgi st) (GET (CgiInfo st))
+  handle (ICgi st) GETVars k = k (ICgi st) (GET st)
 
-  handle (ICgi st) POSTVars k = k (ICgi st) (POST (CgiInfo st))
+  handle (ICgi st) POSTVars k = k (ICgi st) (POST st)
 
-  handle (ICgi st) CookieVars k = k (ICgi st) (Cookies (CgiInfo st))
+  handle (ICgi st) CookieVars k = k (ICgi st) (Cookies st)
 
-  handle (ICgi st) (QueryGetVar q) k = k (ICgi st) (lookup q (GET (CgiInfo st)))
+  handle (ICgi st) (QueryGetVar q) k = k (ICgi st) (lookup q (GET st))
 
-  handle (ICgi st) (QueryPostVar q) k = k (ICgi st) (lookup q (POST (CgiInfo st)))
+  handle (ICgi st) (QueryPostVar q) k = k (ICgi st) (lookup q (POST st))
 
-  handle (ICgi st) GetOutput k = k (ICgi st) (Output (CgiInfo st))
+  handle (ICgi st) GetOutput k = k (ICgi st) (Output st)
 
-  handle (ICgi st) GetHeaders k = k (ICgi st) (Headers (CgiInfo st))
+  handle (ICgi st) GetHeaders k = k (ICgi st) (Headers st)
 
   -- Should this also clear them from the state? It doesn't in the Network.Cgi imp
   -- but seems logical
-  handle (ICgi st) FlushHeaders k = do putStrLn (Headers (CgiInfo st))
+  handle (ICgi st) FlushHeaders k = do putStrLn (Headers st)
                                        k (ICgi st) ()
 
   -- These two are purely to transition states, so we don't need to do anything
@@ -234,18 +234,18 @@ instance Handler Cgi IO where
   handle (ICgi st) FinishRun k = k (ICgi st) ()
 
   -- Handle writing out headers and content
-  handle (ICgi st) WriteHeaders k = do putStrLn (Headers (CgiInfo st))
+  handle (ICgi st) WriteHeaders k = do putStrLn (Headers st)
                                        k (ICgi st) ()
                                        
   -- Handle writing out headers and content
-  handle (ICgi st) WriteContent k = do putStrLn (Output (CgiInfo st))
+  handle (ICgi st) WriteContent k = do putStrLn (Output st)
                                        k (ICgi st) ()
 
-  handle (ICgi st) Flush k = do putStrLn (Output (CgiInfo st))
+  handle (ICgi st) Flush k = do putStrLn (Output st)
                                 k (ICgi st) ()
 
   -- Get the variables from the environment
-  handle () (Init act) k = do 
+  handle () Init k = do 
     query   <- safeGetEnvVar "QUERY_STRING"
     cookie  <- safeGetEnvVar "HTTP_COOKIE"
     agent   <- safeGetEnvVar "HTTP_USER_AGENT"
@@ -256,18 +256,23 @@ instance Handler Cgi IO where
             
     let cgi_info = (CGIInf get_vars post_vars cookies agent
                     "Content-type: text/html\n" "")
-    k (ICgi $ CGISt cgi_info act) ()
+    k (ICgi cgi_info) ()
 
-  handle (ICgi st) (OutputData s) k  = do let new_cgi_info = addOutput s (CgiInfo st)
-                                          let new_state = 
-                                            record { CgiInfo = new_cgi_info } st
-                                          k (ICgi new_state) ()
+  handle (ICgi st) (OutputData s) k  = do let new_cgi_info = addOutput s st
+                                          k (ICgi new_cgi_info) ()
 
+-- TODO: don't hardcode date :P #lazyintern
+  handle (ICgi st) (SetCookie name val) k = do let set_cookie_header = ("Set-Cookie: " ++ 
+                                                name ++ "=" ++ val ++ 
+                                                "; Expires=Thu, 26 Jun 2014 10:00:00 GMT")
+                                               -- putStrLn $ "Debug: Cookie header: " ++ set_cookie_header
+                                               let new_info = addHeaders set_cookie_header st
+                                               k (ICgi new_info) ()
 
 -- Internal mechanism to run the user-specified action
 private
 runCGI' : CGIProg a -> EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
-runCGI' action = do initialise action
+runCGI' action = do initialise 
                     -- Transition to TaskRunning
                     startTask
                     -- Perform the user-defined action and collect the result

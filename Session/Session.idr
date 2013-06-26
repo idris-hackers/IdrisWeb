@@ -12,6 +12,7 @@
 module IdrisWeb.Session.Session
 import SQLite
 import Effects
+%access public
 
 SessionID : Type
 SessionID = Int
@@ -28,6 +29,8 @@ interpSerialisedTy SString = String
 interpSerialisedTy SBool = Bool
 interpSerialisedTy SNull = ()
 
+
+-- TODO: Use the monadic parser instead
 total
 showSerialisedVal : (a : SerialisedSessionType) -> (interpSerialisedTy a) -> String
 showSerialisedVal SInt i = show i
@@ -48,6 +51,7 @@ castSerialisedVal SBool b = castBool b
         castBool _ = False -- -_- gonna have to do something about this
 castSerialisedVal SNull _ = ()
 
+public
 SerialisedSession : Type
 SerialisedSession = List (String, String)
 
@@ -84,146 +88,33 @@ data Session : Effect where
   DeleteSession : Session (SessionRes Initialised a) (SessionRes Invalid a) () -- Possibly have a disposed state? Hm
   UpdateSession : a -> Session (SessionRes Initialised a) (SessionRes Initialised a) ()
 
-{-
-total
-toSerialisedSession : List SerialisedSessionType -> Type
-toSerialisedSession [] = SerialisedSession -- Result type
-toSerialisedSession (x :: xs) = interpSerialisedTy x -> toSerialisedSession xs
-
-total
-serialise : (tys : List SerialisedSessionType) -> toSerialisedSession tys
-serialise 
--}
-
 --total
 interpSerialisedTys : (tys : Vect SerialisedSessionType n) -> Type
 interpSerialisedTys [] = ()
 interpSerialisedTys [x] = interpSerialisedTy x
 interpSerialisedTys (x :: (y :: xs)) = (interpSerialisedTy x, interpSerialisedTys (y :: xs))
 
-
-
-serialise : (tys' : Vect SerialisedSessionType n) -> (Vect String n) -> interpSerialisedTys tys' -> SerialisedSession
-serialise [] () = [] -- ?pines1
-serialise [ty] val = [("name", showSerialisedVal ty val)]
-serialise (ty :: (ytys :: tys)) (x, y) = ("name", showSerialisedVal ty x) :: serialise (ytys :: tys) y
-  -- If (isCons tys) is true, then the args thing will be of form (x, y)
---  | True = let (arg, rest) = args in ("pines", showSerialisedVal ty arg) :: (serialise tys rest)
-  -- otherwise, it will be of form x
---  | False = let args = arg in ("pines", showSerialisedVal ty arg)
- 
-
--- web DSL
--- lambda pulls out of form [(String, String)] 
-
-using (G : Vect Ty n)
-
-  data Env : Vect Ty n -> Type where
-      Nil  : Env Nil
-      (::) : interpTy a -> Env G -> Env (a :: G)
-
-  data HasType : (i : Fin n) -> Vect Ty n -> Ty -> Type where
-      stop : HasType fO (t :: G) t
-      pop  : HasType k G t -> HasType (fS k) (u :: G) t
-
-  lookup : HasType i G t -> Env G -> interpTy t
-  lookup stop    (x :: xs) = x
-  lookup (pop k) (x :: xs) = lookup k xs
-
-
-
-
-
--- 
-{-serialise (ty :: tys) arg with (isCons tys)
- | False ?= Prelude.List.(::) ("pines", showSerialisedVal ty arg) Prelude.List.Nil-- ?pines
- | True ?= Prelude.List.(::) ("pines", showSerialisedVal ty (fst arg)) (serialise tys (snd arg))
- -}
-{-
-interpSerialisedTys : (tys : List SerialisedSessionType) -> List Type
-interpSerialisedTys [] = Prelude.List.Nil
-interpSerialisedTys (x :: xs) = interpSerialisedTy x :: interpSerialisedTys xs
--}
-
-
-{-
-using (xs, ys : List SerialisedSessionType)
-  data SerialisedArgList : List SerialisedSessionType -> Type where
-    sNil : SerialisedArgList Nil
-    sCons : interpSerialisedTy x -> SerialisedArgList xs -> SerialisedArgList (x :: xs)
-
-
-serialise : (tys : List SerialisedSessionType) -> SerialisedArgList tys -> SerialisedSession
-serialise [] _ = []
-serialise (ty :: tys) (sCons arg args) = (showSerialisedVal ty arg) :: (serialise tys args)
--}
-
---serialise : (tys : List SerialisedSessionType) -> interpSerialisedTys tys -> SerialisedSession
---serialise [] [] = [("pines", "pines")]
---serialise [] _ = []
---serialise (ty :: tys) args with (isCons tys) 
---  | True = ?truecase
---  | False = ("pines", showSerialisedVal ty args) :: Prelude.List.Nil
--- = ?mv -- (showSerialisedVal ty dat) :: serialise tys rest
---serialise : (tys : List SerialisedSessionType) -> interpSerialisedTys (tys) ->
+serialise : (tys' : Vect SerialisedSessionType n) -> Vect String n -> interpSerialisedTys tys' -> SerialisedSession
+serialise [] _ _ = []
+serialise [ty] [name] val = [("name", showSerialisedVal ty val)]
+serialise (ty :: (ytys :: tys)) (name :: (ynames :: names)) (x, y) = 
+  (name, showSerialisedVal ty x) :: serialise (ytys :: tys) (ynames :: names) y
 
 deserialise : (a : SerialisedSessionType) -> String -> interpSerialisedTy (a)
 deserialise ty str = castSerialisedVal ty str
-{-
-serialiseSampleData : MySampleSessionData -> SerialisedSession 
-serialiseSampleData mssd = [serialise SString "username" (username mssd), 
-                            serialise SInt "age" (age mssd),
-                            serialise SBool "male" (male mssd)]
-                            -}
+
 SFunType : (xs : List SerialisedSessionType) -> Type
 SFunType (x :: xs) with (length xs)
   | (S k) = (interpSerialisedTy x) -> SFunType xs
   | O = interpSerialisedTy x
 -- Given a number of arguments, arg names and arg types, serialises the session
-{-
-total
-serialiseData : Fin n -> Vect String n -> Vect SerialisedSessionType n -> SerialisedSession
-serialiseData fO _ _ = []
-serialiseData fS (k) (argname :: argnames) (ty :: tys) = 
 
-deserialiseSampleData : SerialisedSession -> Maybe MySampleSessionData
-deserialiseSampleData ss = do ss_un <-  lookup "username" ss
-                              ss_age <- lookup "age" ss
-                              ss_male <- lookup "male" ss
-                              pure $ MySessionData (deserialise SString ss_un) 
-                                                   (deserialise SInt ss_age) 
-                                                   (deserialise SBool ss_male)
-                                                   -}                            
+{-
 sampleSessionData : SessionRes Initialised MySampleSessionData
 sampleSessionData = SRes (ValidInitialisedSession 5 (MySessionData "hi" 1 True))
 
 sampleSessionData' : SessionRes Uninitialised MySampleSessionData
 sampleSessionData' = SRes (UninitialisedSession)
+-}
 
 
-
-{-
--- Let's try and get my head around this whole well-typed interpreter thing then...
-using (G : Vect SerialisedSessionType n)
-  -- Environment: a vector of the types of our argument
-  data Env : Vect SerialisedSessionType n -> Type where
-    -- No types
-    Nil : Env Nil
-    -- Given a serialised type tag a, an environment G,
-    -- appends the type to the environment
-    (::) : interpSerialisedTy a -> Env G -> Env (a :: G)
-
-  -- HasType is a predicate, giving a proof that a variable has a particular type.
-  data HasType : (i : Fin n) -> Vect SerialisedSessionType n -> 
-                              SerialisedSessionType -> Type where
-    -- Index 0 : we've found our type
-    stop : HasType fO (t :: G) t
-    -- Other indices: it's later in the list somewhere
-    pop : HasType k G t -> HasType (fS k) (u :: G) t
-
-  -- Given a proof of list membership and the environment, gets the associated
-  -- type.
-  lookup : HasType i G t -> Env G -> interpSerialisedTy t
-  lookup stop (x :: xs) = x
-  lookup (pop k) (x :: xs) = lookup k xs
-  -}
