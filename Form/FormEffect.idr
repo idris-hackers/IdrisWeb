@@ -1,15 +1,55 @@
 module IdrisWeb.Form.FormEffect
 import Effects
+import Decidable.Equality
 --import FormHandler
 
 %access public -- utter laziness, fixme
 
 data FormTy = FormString
             | FormInt
+            | FormBool
+            | FormFloat
 
+total
 interpFormTy : FormTy -> Type
 interpFormTy FormString = String
 interpFormTy FormInt = Int
+interpFormTy FormBool = Bool
+interpFormTy FormFloat = Float
+
+instance Eq FormTy where
+  (==) FormString FormString = True
+  (==) FormInt FormInt = True
+  (==) FormBool FormBool = True
+  (==) FormFloat FormFloat = True
+  (==) _ _ = False
+
+
+fsNotFi : FormString = FormInt -> _|_
+fsNotFi refl impossible
+
+instance DecEq FormTy where
+  decEq FormString FormString = Yes refl
+  decEq FormString FormInt = No fsNotFi
+  decEq FormString FormBool = ?mv2 --No refl impossible
+  decEq FormString FormFloat = ?mv3 --No refl impossible
+  decEq FormInt FormString = ?mv4 --Yes refl
+  decEq FormInt FormInt = ?mv5 --Yes refl
+  decEq FormInt FormBool = ?mv6 --No refl impossible
+  decEq FormInt FormFloat = ?mv7 -- No refl impossible  
+  decEq FormBool FormString = ?mv8 -- No refl impossible
+  decEq FormBool FormInt = ?mv9 -- No refl impossible
+  decEq FormBool FormBool = ?mv10 -- Yes refl
+  decEq FormBool FormFloat = ?mv11 --No refl impossible
+  decEq FormFloat FormString = ?mv12 -- No impossible
+  decEq FormFloat FormInt = ?mv13 -- No refl impossible
+  decEq FormFloat FormBool = ?mv14 --No refl impossible
+  decEq FormFloat FormFloat = ?mv15 --Yes refl 
+{-
+  decEq FormInt FormInt = Yes refl
+  decEq FormBool FormBool = Yes refl
+  decEq FormFloat FormFloat = Yes refl
+  -}
 
 interpFnTy : Vect FormTy n -> Type
 interpFnTy tys = interpFnTy' (reverse tys)
