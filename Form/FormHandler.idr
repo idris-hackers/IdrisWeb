@@ -18,9 +18,24 @@ import Decidable.Equality
 data WebEffect = CgiEffect
                | SqliteEffect
 
+cgiNotSqlite : CgiEffect = SqliteEffect -> _|_
+cgiNotSqlite refl impossible
+
+sqliteNotCgi : SqliteEffect = CgiEffect -> _|_
+sqliteNotCgi refl impossible
+
+instance DecEq WebEffect where
+  decEq CgiEffect CgiEffect = Yes refl
+  decEq SqliteEffect SqliteEffect = Yes refl
+  decEq CgiEffect SqliteEffect = No cgiNotSqlite
+  decEq SqliteEffect CgiEffect = No sqliteNotCgi
+
 MkHandlerFnTy : Type
 MkHandlerFnTy = (List FormTy, List WebEffect, FormTy)
 
+{-instance DecEq MkHandlerFnTy where
+  decEq (ftys1, wes1, ret1) (ftys2, wes2, ret2)
+  -}
 instance Eq WebEffect where
   (==) CgiEffect CgiEffect = True
   (==) SqliteEffect SqliteEffect = True
@@ -107,11 +122,12 @@ parseFormFn str = case parse parseFormFn' str of
                        Left err => Nothing
                        Right ((name, parsed_fn), _) => Just (name, parsed_fn)
 
-checkFunctions : (reg_fn : MkHandlerFnTy) -> (frm_fn : MkHandlerFnTy) -> mkHandlerFn reg_fn -> Maybe (mkHandlerFn frm_fn)
-checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
-  | Yes _ = Just reg_fn
+checkFunctions : (reg_fn : MkHandlerFnTy) -> (frm_fn : MkHandlerFnTy) -> mkHandlerFn reg_fn -> Maybe RegHandler --(RegHandler mkHandlerFn reg_fn)
+checkFunctions reg_fn_ty frm_fn_ty reg_fn = if reg_fn_ty == frm_fn_ty then Just (RH frm_fn_ty reg_fn) else Nothing
+{-checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
+  checkFunctions | Yes _ = Just reg_fn
   | No _ = Nothing
-
+  -}
 -- Takes in a list of form POST / GET vars, a list of available handlers, and returns the appropriate handler
 getHandler : List (String, String) -> List (String, RegHandler) -> Maybe (FormHandler effs (interpFormTy ret))
                               -- Get the handler field from the form data
@@ -121,9 +137,9 @@ getHandler vars handlers = do handler_field <- lookup "handler" vars
                               -- Lookup the handler in the list of registered handlers
                               (RH rh_type rh_fn) <- lookup handler_name handlers
                               -- Check if the MkHandlerFnTypes, and therefore the function types, are the same
-                              (RH rh_type' rh_fn') <- checkFunctions rh_type handler_type rh_fn
+                              rh_fn' <- checkFunctions rh_type handler_type rh_fn
                               -- Get the arguments, and populate the function
-                              let (tys, effs, ret) = rh_type'
+                              let (tys, effs, ret) = rh_type
                               let arg_len = lengthAsInt tys -- we're discounting the hidden field
                               fn <- evalFn tys arg_len arg_len effs ret vars rh_fn'
                               pure fn

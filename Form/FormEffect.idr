@@ -24,32 +24,48 @@ instance Eq FormTy where
   (==) FormFloat FormFloat = True
   (==) _ _ = False
 
-
-fsNotFi : FormString = FormInt -> _|_
-fsNotFi refl impossible
+formstringNotFormInt : FormString = FormInt -> _|_
+formstringNotFormInt refl impossible
+formstringNotFormBool : FormString = FormBool -> _|_
+formstringNotFormBool refl impossible
+formstringNotFormFloat : FormString = FormFloat -> _|_
+formstringNotFormFloat refl impossible
+formintNotFormString : FormInt = FormString -> _|_
+formintNotFormString refl impossible
+formintNotFormBool : FormInt = FormBool -> _|_
+formintNotFormBool refl impossible
+formintNotFormFloat : FormInt = FormFloat -> _|_
+formintNotFormFloat refl impossible
+formboolNotFormString : FormBool = FormString -> _|_
+formboolNotFormString refl impossible
+formboolNotFormInt : FormBool = FormInt -> _|_
+formboolNotFormInt refl impossible
+formboolNotFormFloat : FormBool = FormFloat -> _|_
+formboolNotFormFloat refl impossible
+formfloatNotFormString : FormFloat = FormString -> _|_
+formfloatNotFormString refl impossible
+formfloatNotFormInt : FormFloat = FormInt -> _|_
+formfloatNotFormInt refl impossible
+formfloatNotFormBool : FormFloat = FormBool -> _|_
+formfloatNotFormBool refl impossible
 
 instance DecEq FormTy where
   decEq FormString FormString = Yes refl
-  decEq FormString FormInt = No fsNotFi
-  decEq FormString FormBool = ?mv2 --No refl impossible
-  decEq FormString FormFloat = ?mv3 --No refl impossible
-  decEq FormInt FormString = ?mv4 --Yes refl
-  decEq FormInt FormInt = ?mv5 --Yes refl
-  decEq FormInt FormBool = ?mv6 --No refl impossible
-  decEq FormInt FormFloat = ?mv7 -- No refl impossible  
-  decEq FormBool FormString = ?mv8 -- No refl impossible
-  decEq FormBool FormInt = ?mv9 -- No refl impossible
-  decEq FormBool FormBool = ?mv10 -- Yes refl
-  decEq FormBool FormFloat = ?mv11 --No refl impossible
-  decEq FormFloat FormString = ?mv12 -- No impossible
-  decEq FormFloat FormInt = ?mv13 -- No refl impossible
-  decEq FormFloat FormBool = ?mv14 --No refl impossible
-  decEq FormFloat FormFloat = ?mv15 --Yes refl 
-{-
+  decEq FormString FormInt = No formstringNotFormInt
+  decEq FormString FormBool = No formstringNotFormBool
+  decEq FormString FormFloat = No formstringNotFormFloat
+  decEq FormInt FormString = No formintNotFormString
   decEq FormInt FormInt = Yes refl
+  decEq FormInt FormBool = No formintNotFormBool
+  decEq FormInt FormFloat = No formintNotFormFloat
+  decEq FormBool FormString = No formboolNotFormString
+  decEq FormBool FormInt = No formboolNotFormInt
   decEq FormBool FormBool = Yes refl
+  decEq FormBool FormFloat = No formboolNotFormFloat
+  decEq FormFloat FormString = No formfloatNotFormString
+  decEq FormFloat FormInt = No formfloatNotFormInt
+  decEq FormFloat FormBool = No formfloatNotFormBool
   decEq FormFloat FormFloat = Yes refl
-  -}
 
 interpFnTy : Vect FormTy n -> Type
 interpFnTy tys = interpFnTy' (reverse tys)
