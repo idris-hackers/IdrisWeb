@@ -12,91 +12,79 @@
 module IdrisWeb.Session.Session
 import SQLite
 import Effects
+import Parser
 %access public
 
 SessionID : Type
 SessionID = Int
 
-data SerialisedSessionType = SInt
-                           | SString
-                           | SBool
-                           | SNull
+DB_NAME : String
+DB_NAME = "sessions.db"
 
+-- I think in this circumstance, tagged data types
+-- would be better, since we're not passing directly
+-- to a function, more just providing other functions
+-- with data.
+data SessionDataType = SInt Int
+                     | SString String
+                     | SBool Bool
+                     | SNull 
 total
-interpSerialisedTy : SerialisedSessionType -> Type
-interpSerialisedTy SInt = Int
-interpSerialisedTy SString = String
-interpSerialisedTy SBool = Bool
-interpSerialisedTy SNull = ()
+showSerialisedVal : SessionDataType -> (String, String)
+showSerialisedVal (SInt i) = ("SInt", show i)
+showSerialisedVal (SString s) = ("SString", s)
+showSerialisedVal (SBool b) = ("SBool", show b)
+showSerialisedVal (SNull) = ("SNull", "")
 
+-- Given a serialised value from the DB, construct
+-- the appropriate data type.
+-- TODO: Probably a better way of doing it than storing the
+-- type as a string in the DB: an enum would likely be better
+--total
+deserialiseVal : String -> String -> Maybe SessionDataType
+deserialiseVal tystr s =
+  if tystr == "SInt" then case parse int s of
+                               Left err => Nothing
+                               Right (i, _) => Just $ SInt i
+  else if tystr == "SString" then Just $ SString s
+  else if tystr == "SBool" then case parse bool s of
+                                     Left err => Nothing
+                                     Right (b, _) => Just $ SBool b
+  else if tystr == "SNull" then Just SNull
+  else Nothing
 
-total
-showSerialisedVal : (a : SerialisedSessionType) -> (interpSerialisedTy a) -> String
-showSerialisedVal SInt i = show i
-showSerialisedVal SString s = s
-showSerialisedVal SBool b = show b
-showSerialisedVal SNull _ = ""
+-- SerialisedSession is a list of 3-tuples of <Key, Value, Type>.
+SerialisedSessionEntry : Type
+SerialisedSessionEntry = (String, String, String)
 
--- TODO: Use the monadic parser instead
-total
-castSerialisedVal : (a : SerialisedSessionType) -> String -> (interpSerialisedTy a) 
-castSerialisedVal SString s = s
-castSerialisedVal SInt i = castInt i
-  where castInt : String -> Int
-        castInt i = cast i
-castSerialisedVal SBool b = castBool b
-  where castBool : String -> Bool
-        castBool "True" = True
-        castBool "False" = False
-        castBool _ = False -- -_- gonna have to do something about this
-castSerialisedVal SNull _ = ()
-
-public
+public -- this really shouldn't be public, TODO: change
 SerialisedSession : Type
-SerialisedSession = List (String, String)
+SerialisedSession = List SerialisedSessionEntry
 
-data SessionStep = Uninitialised -- before trying to retrieve from the DB
-                 | Initialised -- after successfully retrieving session data
-                 | Invalid -- if session data is invalid
-
-data SessionData : Type -> Type where
-  UninitialisedSession : (session_id : SessionID) -> SessionData a
-  ValidInitialisedSession : (session_id : SessionID) -> a -> SessionData a
-  InvalidInitialisedSession : SessionData a
-
-  --MkSessionData : (session_id : SessionID) ->
-     --             (session_data : a) -> SessionData a
-
-data SessionRes : (s : SessionStep) -> Type -> Type where
-  SRes : SessionData a -> SessionRes s a 
-  --DisposedSession : 
-
-record MySampleSessionData : Type where
-  MySessionData : (username : String) ->
-                  (age : Int) -> 
-                  (male : Bool) -> MySampleSessionData
-
-
--- getSessionData : Eff m [SESSION (ValidSession Initialised a)] a
+-- SessionData is the user-facing data type, containing the session names and variables 
+public
+SessionData : Type
+SessionData = List (String, SessionDataType)
 
 -- Retrieves session data as a list of (String, String) k-v pairs.
 -- We marshal this back to the required types in a later function.
-collectResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List (String, String))
+collectResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] SerialisedSession
 collectResults = do
   step_result <- nextRow
   case step_result of
       StepComplete => do key <- getColumnText 1
                          val <- getColumnText 2
+                         ty <- getColumnText 3
                          xs <- collectResults
-                         Effects.pure $ (key, val) :: xs
+                         Effects.pure $ (key, val, ty) :: xs
       NoMoreRows => Effects.pure []
       StepFail => Effects.pure []
 
-retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either String (List (String, String)))
+retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either String SerialisedSession)
 retrieveSessionData s_id = do
-  open_db <- openDB "sessions.db"
+  open_db <- openDB DB_NAME
   if open_db then do
-    let sql = "SELECT key, val FROM `sessiondata` WHERE `session_id` = ?"
+    let sql = "SELECT key, val, ty FROM `sessiondata` WHERE `session_id` = ?"
     sql_prep_res <- prepareStatement sql
     if sql_prep_res then do
       startBind
@@ -118,38 +106,67 @@ retrieveSessionData s_id = do
     err <- connFail
     Effects.pure $ Left err
 
-getSession : (tys : Vect SerialisedSessionType n) -> (names : Vect String n) -> SessionID -> IO (Maybe (interpSerialisedTys tys))
+--removeSessionData : SessionID -> Eff IO [SQLITE ()] 
+
+getInsertArg : SerialisedSession -> String
+getInsertArg [] = ""
+-- no comma needed at the end
+getInsertArg ((key, val, ty) :: []) = "(\"" ++ key ++ "\", \"" ++ val ++ "\", \"" ++ ty ++ "\")" 
+getInsertArg ((key, val, ty) :: xs) = "(\"" ++ key ++ "\", \"" ++ val ++ "\", \"" ++ ty ++ "\")" ++ ", " ++ (getInsertArg xs)
+ 
+
+storeSession : SessionID -> SerialisedSession -> Eff IO [SQLITE ConnectionOpened] (Either String ())
+storeSession _ [] = Effects.pure $ Right () -- If it's an empty session, we really don't have to do anything
+storeSession s_id ss = do
+  let insert_sql = "INSERT INTO `sessiondata` (`key`, `val`, `ty`) VALUES ?"
+  sql_prep_res <- prepareStatement sql
+  if sql_prep_res then do
+    startBind
+    bindString 1 getInsertArg 
+
+storeSessionData : SessionID -> SerialisedSession -> Eff IO [SQLITE ()] (Either String SerialisedSession)
+storeSessionData s_id sd = do
+  open_db <- openDB DB_NAME
+  if open_db then do
+    
+  
+-- Remove then store
+updateSessionData : SessionID -> SessionData -> Eff IO [SQLITE ()] (Either String SerialisedSession)
+-}
+{-
+getSession : (tys : Vect SessionDataType n) -> (names : Vect String n) -> SessionID -> IO (Maybe (interpSerialisedTys tys))
 getSession tys names id = do db_res <- run [()] (retrieveSessionData id)
                              case db_res of
                                   Left err => pure Nothing
                                   Right xs => pure Nothing --pure $ 
+                                             -}
+
+-- TODO: This should be a common definition somewhere, I think
+mapM : Monad m => (a -> m b) -> List a -> m (List b)
+mapM fn xs = sequence $ map fn xs
+
+deserialiseSession : SerialisedSession -> Maybe SessionData
+deserialiseSession ss = mapM (\(key, val, ty) => case (deserialiseVal ty val) of
+                                                      Just dat => Just (key, dat)
+                                                      Nothing => Nothing) ss
 
 
-data Session : Effect where
-  ---NewSession : NoSession a -> 
-  -- Retrieves session information from the database, and marshals it into the given
-  -- format.
-  RetrieveSessionData : Session (SessionRes Uninitialised a) (SessionRes Initialised a) a
-  -- 
-  DeleteSession : Session (SessionRes Initialised a) (SessionRes Invalid a) () -- Possibly have a disposed state? Hm
-  UpdateSession : a -> Session (SessionRes Initialised a) (SessionRes Initialised a) ()
-{-
-instance Handler Session IO where
-  handle (UninitialisedSession s_id) RetrieveSessionData = do
+getSession : SessionID -> IO (Maybe SessionData)
+getSession s_id = do db_res <- run [()] (retrieveSessionData s_id)
+                     case db_res of
+                          Left err => pure Nothing
+                          Right ss => pure $ deserialiseSession ss
 
-  handle (ValidInitialisedSession s_id sd) 
-  -}
---total
-interpSerialisedTys : (tys : Vect SerialisedSessionType n) -> Type
-interpSerialisedTys [] = ()
-interpSerialisedTys [x] = interpSerialisedTy x
-interpSerialisedTys (x :: (y :: xs)) = (interpSerialisedTy x, interpSerialisedTys (y :: xs))
 
-serialise : (tys' : Vect SerialisedSessionType n) -> Vect String n -> interpSerialisedTys tys' -> SerialisedSession
-serialise [] _ _ = []
-serialise [ty] [name] val = [("name", showSerialisedVal ty val)]
-serialise (ty :: (ytys :: tys)) (name :: (ynames :: names)) (x, y) = 
-  (name, showSerialisedVal ty x) :: serialise (ytys :: tys) (ynames :: names) y
+-- showSerialisedVal : (String, String)
+serialiseSession : SessionData -> SerialisedSession
+serialiseSession sd = map (\(key, sdt) => let (tystr, valstr) = showSerialisedVal sd in 
+                                              (key, valstr, tystr)) sd
 
---deserialise : (tys : Vect SerialisedSessionType n) -> Vect String n -> List (String, String) -> interpSerialisedTys tys
---deserialise [] _ _ 
+
+{- Session effect:
+   We should be able to create, update and delete sessions.
+   We should only be able to update and delete valid sessions.
+   We should only be able to create sessions when we don't have an active session.
+   We should only
+-} 

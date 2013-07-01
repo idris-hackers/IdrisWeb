@@ -74,7 +74,7 @@ interpFnTy tys = interpFnTy' (reverse tys)
         interpFnTy' (x :: xs) = interpFormTy x -> interpFnTy' xs
 
 FormHandler : List EFFECT -> Type -> Type
-FormHandler effs t = Eff IO effs t
+FormHandler effs t = EffM IO effs effs t
 
 interpCheckedFnTy : Vect FormTy n -> List EFFECT -> Type -> Type
 interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
@@ -119,12 +119,16 @@ using (G : Vect FormTy n)
 
   addSubmit : (interpCheckedFnTy G effs t) -> (effs : List EFFECT) -> (t : Type) -> EffM m [FORM (FormRes G)] [FORM (FormRes [])] String
   addSubmit fn effs t = (Submit fn effs t)
-
+{-
+  serialiseSubmit : G -> String
+  serialiseSubmit
+  -}
 UserForm : Type
 UserForm = Eff id [FORM (FormRes [])] String -- Making a form is a pure function (atm)
 
 SerialisedForm : Type
 SerialisedForm = String
+
 
 -- TODO: Action
 mkForm : String -> UserForm -> SerialisedForm

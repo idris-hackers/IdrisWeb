@@ -36,7 +36,7 @@ instance Functor Parser where
                                   -- Apply f to the v that we got from parsing
                                   (Right (v, rest)) => Right ((f v), rest))
     
--- <*> : f (a -> b) -> f a -> f b
+-- <$> : f (a -> b) -> f a -> f b
 instance Applicative Parser where 
     pure v      = P (\inp => Right (v, inp)) 
     -- Parse to get the function, then parse to get the first argument
@@ -131,6 +131,15 @@ many1 p                       = do v <- p
                                    vs <- many p
                                    pure $ Prelude.List.(::) v vs
 
+bool : Parser Bool
+bool = parseTrue ||| parseFalse
+  where parseTrue : Parser Bool
+        parseTrue  = do oneof ['T', 't']
+                        string "rue"
+                        pure True
+        parseFalse = do oneof ['F', 'f']
+                        string "alse"
+                        pure False
 
 --p  >>= (\v => ((many p) >>= (\vs => (pure (Prelude.List.(::) v vs)))))
                                     --vs <- many p
@@ -152,10 +161,11 @@ nat                           =  do xs <- many digit
 
 
 int                           : Parser Int
-int                           =  do char '-'
-                                    n <- nat
-                                    pure (-n)
-                                  `mplus` nat
+int                           =  neg ||| nat
+  where neg : Parser Int
+        neg = do char '-'
+                 n <- nat
+                 pure (-n)
 
 space                         : Parser ()
 space                         =  do many (sat isSpace)

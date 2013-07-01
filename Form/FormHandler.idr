@@ -5,6 +5,9 @@ import FormEffect
 import SQLite
 import Parser
 import Decidable.Equality
+--import DecListTup
+%access public
+
 --record HandlerState : Type where
 
 --data FormHander : Effect where
@@ -33,8 +36,8 @@ instance DecEq WebEffect where
 MkHandlerFnTy : Type
 MkHandlerFnTy = (List FormTy, List WebEffect, FormTy)
 
-{-instance DecEq MkHandlerFnTy where
-  decEq (ftys1, wes1, ret1) (ftys2, wes2, ret2)
+{-instance DecEq (List FormTy, List WebEffect, FormTy) where
+  decEq (ftys1, wes1, ret1) (ftys2, wes2, ret2) = ?mv
   -}
 instance Eq WebEffect where
   (==) CgiEffect CgiEffect = True
@@ -69,7 +72,7 @@ lengthAsInt xs = fromInteger lengthAsInteger
         lengthAsInteger = cast $ length xs
 
 -- Gets the serialised value as the given type, if it's possible
-total
+--total
 parseSerialisedValue : (ty : FormTy) -> String -> Maybe (interpFormTy ty)
 parseSerialisedValue FormString val = Just val
 parseSerialisedValue FormInt val = case parse int val of
@@ -83,17 +86,37 @@ getAs : (ty : FormTy) -> Int -> List (String, String) -> Maybe (interpFormTy ty)
 getAs ty n args = do val <- lookup ("arg" ++ (show n)) args
                      parseSerialisedValue ty val
 
-evalFn : (ftys : List FormTy) -> 
+-- Disregards args
+public
+mkFinalHandlerType : MkHandlerFnTy -> Type
+mkFinalHandlerType (_, effs, ret) = FormHandler (interpWebEffects effs) (interpFormTy ret)
+
+getWebEnv' : (effs : List WebEffect) -> Effects.Env IO (interpWebEffects effs)
+getWebEnv' [] = []
+getWebEnv' (CgiEffect :: xs) = (()) :: getWebEnv' xs
+getWebEnv' (SqliteEffect :: xs) = (()) :: getWebEnv' xs
+
+getEffects : (List FormTy, List WebEffect, FormTy) -> List EFFECT
+getEffects (_, effs, _) = interpWebEffects effs
+
+getWebEnv : (frm_ty : MkHandlerFnTy) -> Effects.Env IO (getEffects frm_ty)
+getWebEnv (_, effs, _) = getWebEnv' effs
+
+
+data PopFn : Type where
+  PF : (w_effs : List WebEffect) -> (ret_ty : FormTy) -> 
+       (effs : List EFFECT) -> (env : Effects.Env IO effs) -> 
+       Eff IO effs (interpFormTy ret_ty) -> PopFn
+
+evalFn : (mkHTy : MkHandlerFnTy) -> 
          (counter : Int) -> -- TODO: ftys would be far better as a Vect over some finite set indexed over n
          (arg_num : Int) ->
-         (effs : List WebEffect) -> 
-         (ret : FormTy) -> 
          (args : List (String, String)) ->
-         (fn : mkHandlerFn' ftys effs ret) ->
-         Maybe (FormHandler (interpWebEffects effs) (interpFormTy ret))
-evalFn [] counter argnum effs ret args fn = Just fn
-evalFn (fty :: ftys) counter argnum effs ret args fn = let arg = getAs fty (argnum - counter + 1) args in
-                                                           evalFn ftys (counter - 1) argnum effs ret args (fn arg)
+         (fn : mkHandlerFn mkHTy) ->
+         Maybe (mkFinalHandlerType mkHTy, PopFn)
+evalFn (Prelude.List.Nil, effs, ret) counter argnum args fn = Just (fn, (PF effs ret (interpWebEffects effs) (getWebEnv' effs) fn))-- ?mv -- Just (fn, )
+evalFn ((fty :: ftys), effs, ret) counter argnum args fn = let arg = getAs fty (argnum - counter + 1) args in
+                                                               evalFn (ftys, effs, ret) (counter - 1) argnum args (fn arg)
 
 {- Parser functions to grab arguments from a form -}
 strFty : List (String, FormTy)
@@ -122,30 +145,57 @@ parseFormFn str = case parse parseFormFn' str of
                        Left err => Nothing
                        Right ((name, parsed_fn), _) => Just (name, parsed_fn)
 
-checkFunctions : (reg_fn : MkHandlerFnTy) -> (frm_fn : MkHandlerFnTy) -> mkHandlerFn reg_fn -> Maybe RegHandler --(RegHandler mkHandlerFn reg_fn)
-checkFunctions reg_fn_ty frm_fn_ty reg_fn = if reg_fn_ty == frm_fn_ty then Just (RH frm_fn_ty reg_fn) else Nothing
-{-checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
-  checkFunctions | Yes _ = Just reg_fn
-  | No _ = Nothing
-  -}
+checkFunctions : (reg_fn_ty : MkHandlerFnTy) -> (frm_fn_ty : MkHandlerFnTy) -> mkHandlerFn reg_fn_ty -> Maybe (mkHandlerFn frm_fn_ty)
+--checkFunctions reg_fn_ty frm_fn_ty reg_fn = if reg_fn_ty == frm_fn_ty then Just (RH frm_fn_ty reg_fn) else Nothing
+checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
+  checkFunctions frm_fn_ty frm_fn_ty reg_fn | Yes refl = Just reg_fn
+  checkFunctions reg_fn_ty frm_fn_ty reg_fn | No _ = Nothing
+                                          
+
+getReturnType : MkHandlerFnTy -> FormTy
+getReturnType (_, _, ret) = ret
+
+
+--getHandlerFnTy : List (String, String) -> List (String, RegHandler) -> Maybe 
 -- Takes in a list of form POST / GET vars, a list of available handlers, and returns the appropriate handler
-getHandler : List (String, String) -> List (String, RegHandler) -> Maybe (FormHandler effs (interpFormTy ret))
-                              -- Get the handler field from the form data
-getHandler vars handlers = do handler_field <- lookup "handler" vars
-                              -- Parse the handler field
-                              (handler_name, handler_type) <- parseFormFn handler_field
-                              -- Lookup the handler in the list of registered handlers
+getHandler : List (String, String) -> 
+             (handler_name : String) -> 
+             (handler_ty : MkHandlerFnTy) -> 
+             List (String, RegHandler) -> 
+             Maybe (mkFinalHandlerType handler_ty, PopFn)
+getHandler vars handler_name handler_type handlers = do 
                               (RH rh_type rh_fn) <- lookup handler_name handlers
-                              -- Check if the MkHandlerFnTypes, and therefore the function types, are the same
                               rh_fn' <- checkFunctions rh_type handler_type rh_fn
-                              -- Get the arguments, and populate the function
-                              let (tys, effs, ret) = rh_type
-                              let arg_len = lengthAsInt tys -- we're discounting the hidden field
-                              fn <- evalFn tys arg_len arg_len effs ret vars rh_fn'
-                              pure fn
-                              --else Nothing -- This would really be better as an Either, I think.
+                              let f_rh = (RH handler_type rh_fn')
+                              let (tys, effs, ret) = handler_type
+                              let arg_len = lengthAsInt tys 
+                              evalFn handler_type arg_len arg_len vars rh_fn'
+                              -- ?mv
+                              --pure ((tys, effs, ret), final_handler)
+--getEffEnv : (mkty : MkHandlerFnTy) -> Effects.Env IO (
+
+getEffEnv' : (ws_ty : List WebEffect) -> Effects.Env IO (interpWebEffects ws_ty) 
+getEffEnv' ws = getWebEnv' ws
+-- TODO: Return types
+-- Check the POST / GET vars for the handler field, the list of registered handlers,
+-- and runs the appropriate handler if it exists.
+-- If the handler runs successfully, True will be returned. Otherwise, False will be returned.
+-- This is an ugly mess; todo: cleanup
+
+getWebEffects : MkHandlerFnTy -> List WebEffect
+getWebEffects (_, effs, _) = effs
 
 
+--Eff IO 
+
+executeHandler : List (String, String) -> List (String, RegHandler) -> IO Bool
+executeHandler vars handlers = case (lookup "handler" vars) >>= parseFormFn of
+                                    Just (name, frm_ty) => case getHandler vars name frm_ty handlers of
+                                      Just (fn, (PF effs ret conc_effs env fn')) => do run env fn'
+                                                                                       pure True 
+                                      Nothing => pure False
+                                    Nothing => pure False
+                                               
                        --Right (_, _) => Nothing -- Some bits didn't parse
 {- TODO. Not sure this will be possible at this early stage. -}
 --effect : Parser EFFECT
@@ -154,25 +204,3 @@ getHandler vars handlers = do handler_field <- lookup "handler" vars
 
 
 
-{- Say we have a handler:
-
-printNameAge : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)] ()
-printNameAge ms mi = case (ms, mi) of
-                          Just (ms', mi') => output $ "Name: " ++ ms' ++ ", age: " ++ show mi'
-                          Nothing => output "Error parsing data."
-
-
-Ideally, we want to add this like:
-
-AddHandler printNameAge
-
-But I'm not sure we can.
-
-
-One thing we could do instead, though, is do something a bit like this:
-AddHandler [FormString, FormInt] [CGI (InitialisedCGI TaskRunning)] FormUnit printNameAge
-Ugly as hell, but then AddHandler would be
-
-AddHandler : (ftys : List FormTy) -> (effs : List EFFECT) -> (ret : FormTy) -> mkHandlerFn' ftys effs ret -> FormHandler (HandlerRes G) (HandlerRes (ftys, effs, ret) :: G)
-
--}
