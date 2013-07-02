@@ -6,7 +6,8 @@ module IdrisWeb.Effect.Cgi
 
 import Effects
 import CgiUtils
-
+import FormEffect
+import FormTypes
 
 -- Information passed by CGI
 public
@@ -29,7 +30,7 @@ CGIProg : List EFFECT -> Type -> Type
 
 -- States in the state machine
 public
-data Step   = Initialised 
+data CGIStep   = Initialised 
             | TaskRunning 
             | TaskCompleted 
             | HeadersWritten 
@@ -40,7 +41,7 @@ data Step   = Initialised
 
 -- Data type representing an initialised CGI script
 public
-data InitialisedCGI : Step -> Type where
+data InitialisedCGI : CGIStep -> Type where
   ICgi : CGIInfo -> InitialisedCGI s
 
 
@@ -144,6 +145,12 @@ data Cgi : Effect where
   -- Run the user-specified action
   RunAction : Env IO (CGI (InitialisedCGI TaskRunning) :: effs) -> CGIProg effs a -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) a
 
+  -- Write a form to the web page
+  AddForm : String -> String -> UserForm -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
+
+  -- Attempts to handle a form, given a list of available handlers
+  HandleForm : List (String, RegHandler) -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) Bool
+
 -- Creation of the concrete effect
 CGI t = MkEff t Cgi
 
@@ -212,6 +219,13 @@ abstract
 output : String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
 output s = (OutputData s)
 
+abstract
+addForm : String -> String -> UserForm -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
+addForm name action form = (AddForm name action form)
+
+abstract
+handleForm : List (String, RegHandler) -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) Bool
+handleForm handlers = (HandleForm handlers)
 
 -- Handler for CGI in the IO context
 instance Handler Cgi IO where
@@ -272,17 +286,23 @@ instance Handler Cgi IO where
   handle (ICgi st) (SetCookie name val) k = do let set_cookie_header = ("Set-Cookie: " ++ 
                                                 name ++ "=" ++ val ++ 
                                                 "; Expires=Thu, 26 Jun 2014 10:00:00 GMT")
-                                               -- putStrLn $ "Debug: Cookie header: " ++ set_cookie_header
                                                let new_info = addHeaders set_cookie_header st
                                                k (ICgi new_info) ()
 
--- TODO: runEnv
-  handle (ICgi st) (RunAction effs act) k = do (((ICgi st') :: env'), result) <- runEnv ((ICgi st) :: effs) act -- (effs ++ (ICgi st)) act
+  handle (ICgi st) (RunAction effs act) k = do (((ICgi st') :: env'), result) <- runEnv ((ICgi st) :: effs) act 
                                                k (ICgi st') result
-
+{-
+  handle (ICgi st) (AddForm name action form) k = do 
+    
+  -- TODO: allow GET vars
+  handle (ICgi st) (HandleForm handlers) k = do let post_vars = POST st
+                                                res <- executeHandler post_vars handlers (ICgi st)
+                                                k (ICgi -}
 -- Internal mechanism to run the user-specified action
 private
-runCGI' : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> CGIProg effs a -> EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
+runCGI' : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> 
+          CGIProg effs a -> 
+          EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
 runCGI' init_effs action = do initialise 
                               -- Transition to TaskRunning
                               startTask
