@@ -5,12 +5,6 @@ module IdrisWeb.Effect.Cgi
 
 import System
 
-
--- Simple type synonym for a list of key value pairs
-public
-Vars : Type
-Vars = List (String, String)
-
  
 -- Pure, non-effecting functions
 abstract
