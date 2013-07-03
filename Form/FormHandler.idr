@@ -1,8 +1,8 @@
 module IdrisWeb.Form.FormHandler 
 import Effects
-import Cgi
+import CgiTypes
 import FormEffect
-import SQLite
+import SQLite -- Probably need to separate this out into SQLiteTypes
 import Parser
 import Decidable.Equality
 --import DecListTup
@@ -37,7 +37,9 @@ parseSerialisedValue FormInt val = case parse int val of
                                         Left err => Nothing
                                         Right (i, _) => Just i
 -- FIXME: Placeholders for now, todo: improve parser
-parseSerialisedValue FormBool val = Just False
+parseSerialisedValue FormBool val = case parse bool val of
+                                         Left err => Nothing
+                                         Right (b, _) => Just b
 parseSerialisedValue FormFloat val = Just 0.0
 
 getAs : (ty : FormTy) -> Int -> List (String, String) -> Maybe (interpFormTy ty)
