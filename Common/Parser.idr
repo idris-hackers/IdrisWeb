@@ -131,6 +131,7 @@ many1 p                       = do v <- p
                                    vs <- many p
                                    pure $ Prelude.List.(::) v vs
 
+
 bool : Parser Bool
 bool = parseTrue ||| parseFalse
   where parseTrue : Parser Bool
