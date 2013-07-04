@@ -11,7 +11,7 @@ import Parser
 import Decidable.Equality
 import SQLite
 
-
+%access public -- for now
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String
 showFormVal FormString s = s
 showFormVal FormInt i = show i
@@ -22,11 +22,11 @@ serialiseSubmit : String ->
                   List WebEffect -> 
                   FormTy -> 
                   String
-serialiseSubmit name tys effs ret = "<input type=\"hidden\" name=\"handler\" value=\"" ++ name ++ ":" ++
-                                     serialised_tys ++ ":" ++ serialised_effs ++ ":" ++ serialised_ret ++ ";\"></input>" ++
+serialiseSubmit name tys effs ret = "<input type=\"hidden\" name=\"handler\" value=\"" ++ name ++ "." ++
+                                     serialised_tys ++ "." ++ serialised_effs ++ "." ++ serialised_ret ++ "-\"></input>" ++
                                     "<input type=\"submit\"></input></form>"  
-  where serialised_tys = foldr (\ty, str => str ++ (show ty) ++ ";") "" tys
-        serialised_effs = foldr (\eff, str => str ++ (show eff) ++ ";") "" effs
+  where serialised_tys = foldr (\ty, str => str ++ (show ty) ++ "-") "" tys
+        serialised_effs = foldr (\eff, str => str ++ (show eff) ++ "-") "" effs
         serialised_ret =  (show ret) 
 
 instance Handler Form m where
@@ -60,7 +60,7 @@ parseSerialisedValue FormBool val = case parse bool val of
 parseSerialisedValue FormFloat val = Just 0.0
 
 getAs : (ty : FormTy) -> Int -> List (String, String) -> Maybe (interpFormTy ty)
-getAs ty n args = do val <- lookup ("arg" ++ (show n)) args
+getAs ty n args = do val <- lookup ("inp" ++ (show n)) args
                      parseSerialisedValue ty val
 
 -- Disregards args
@@ -90,8 +90,8 @@ evalFn : (mkHTy : MkHandlerFnTy) ->
          Maybe (mkFinalHandlerType mkHTy, PopFn)
 evalFn (Prelude.List.Nil, effs, ret) counter argnum args fn cgi = Just (fn, 
        (PF effs ret (interpWebEffects effs) (getWebEnv' effs cgi) fn))-- ?mv -- Just (fn, )
-evalFn ((fty :: ftys), effs, ret) counter argnum args fn cgi = let arg = getAs fty (argnum - counter + 1) args in
-                                                                   evalFn (ftys, effs, ret) (counter - 1) argnum args (fn arg) cgi
+evalFn ((fty :: ftys), effs, ret) counter argnum args fn cgi = let arg = getAs fty counter args in
+                                                                   evalFn (ftys, effs, ret) (counter + 1) argnum args (fn arg) cgi
 
 {- Parser functions to grab arguments from a form -}
 strFty : List (String, FormTy)
@@ -102,25 +102,25 @@ strEff = [("cgi", CgiEffect), ("sqlite", SqliteEffect)]
 
 arg : Parser FormTy
 arg = do a_str <- strToken
-         char ';'
+         char '-'
          case lookup a_str strFty of
               Just fty => pure fty
               Nothing  => failure $ "Attempted to deserialise nonexistent function type " ++ a_str
 
 webEff : Parser WebEffect
 webEff = do e_str <- strToken
-            char ';'
+            char '-'
             case lookup e_str strEff of
                  Just w_eff => pure w_eff
                  Nothing => failure $ "Attempted to deserialise nonexistent web effect " ++ e_str
 
 parseFormFn' : Parser (String, MkHandlerFnTy)
 parseFormFn' = do name <- strToken
-                  char ':'
+                  char '.'
                   args <- many arg
-                  char ':' -- List delimiter
+                  char '.' -- List delimiter
                   effs <- many webEff
-                  char ':'
+                  char '.'
                   ret <- arg
                   pure (name, (args, effs, ret))
                   
@@ -159,7 +159,7 @@ getHandler vars handler_name handler_type handlers cgi = do
                               let f_rh = (RH handler_type rh_fn')
                               let (tys, effs, ret) = handler_type
                               let arg_len = lengthAsInt tys 
-                              evalFn handler_type arg_len arg_len vars rh_fn' cgi
+                              evalFn handler_type 0 0 vars rh_fn' cgi
 
 getWebEffects : MkHandlerFnTy -> List WebEffect
 getWebEffects (_, effs, _) = effs
@@ -181,7 +181,7 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
                                                       let cgi' = (addOutput "Found handler field; could not execute" st)
                                                       pure ((ICgi cgi'), False)
                                       Nothing => do let (ICgi st) = cgi
-                                                    let cgi' = (addOutput "Could not find handler in vars" st)
+                                                    let cgi' = (addOutput "Could not find handler in vars / could not parse" st)
                                                     pure ((ICgi cgi'), False)
 
 
@@ -192,7 +192,7 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
 mkForm : String -> String -> UserForm -> SerialisedForm
 mkForm name action frm = runPure [FR O [] [] ("<form name=\"" ++ name ++ 
-                         "\" action=\"" ++ action ++ "\" method=\"post\" enctype=\"text/plain\">\n")] frm
+                         "\" action=\"" ++ action ++ "\" method=\"post\">\n")] frm
 
 
 -- In handle, then match on (ICGI s) to get access to state
@@ -341,7 +341,7 @@ instance Handler Cgi IO where
     agent   <- safeGetEnvVar "HTTP_USER_AGENT"
     content <- getContent
     let get_vars  = getVars ['&',';'] query
-    let post_vars = getVars ['&','\n'] content
+    let post_vars = getVars ['&'] content -- TODO: plain/text encoding
     let cookies   = getVars [';'] cookie
             
     let cgi_info = (CGIInf get_vars post_vars cookies agent
