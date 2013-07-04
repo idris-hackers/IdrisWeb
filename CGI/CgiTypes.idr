@@ -252,7 +252,7 @@ data Cgi : Effect where
   Flush : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
   -- Initialise the internal CGI State
-  Init : Cgi () (InitialisedCGI Initialised) ()
+  Init : Cgi () (InitialisedCGI Initialised) String
 
   -- Transition to task started state
   StartRun : Cgi (InitialisedCGI Initialised) (InitialisedCGI TaskRunning) ()
@@ -264,7 +264,7 @@ data Cgi : Effect where
   WriteHeaders : Cgi (InitialisedCGI TaskCompleted) (InitialisedCGI HeadersWritten) ()
 
   -- Write content, transition to content written state
-  WriteContent : Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
+  WriteContent : String -> Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
 
   -- Add cookie
   -- TODO: Add expiry date in here once I've finished the basics
@@ -312,5 +312,9 @@ SerialisedForm = String
 
 
 
+data PopFn : Type where
+  PF : (w_effs : List WebEffect) -> (ret_ty : FormTy) -> 
+       (effs : List EFFECT) -> (env : Effects.Env IO effs) -> 
+       Eff IO effs (interpFormTy ret_ty) -> PopFn
 
 
