@@ -147,13 +147,14 @@ getReturnType (_, _, ret) = ret
 
 --getHandlerFnTy : List (String, String) -> List (String, RegHandler) -> Maybe 
 -- Takes in a list of form POST / GET vars, a list of available handlers, and returns the appropriate handler
-getHandler : List (String, String) -> 
+private
+getHandler' : List (String, String) -> 
              (handler_name : String) -> 
              (handler_ty : MkHandlerFnTy) -> 
              List (String, RegHandler) -> 
              (InitialisedCGI TaskRunning) -> 
              Maybe (mkFinalHandlerType handler_ty, PopFn)
-getHandler vars handler_name handler_type handlers cgi = do 
+getHandler' vars handler_name handler_type handlers cgi = do 
                               (RH rh_type rh_fn) <- lookup handler_name handlers
                               rh_fn' <- checkFunctions rh_type handler_type rh_fn
                               let f_rh = (RH handler_type rh_fn')
@@ -164,31 +165,43 @@ getHandler vars handler_name handler_type handlers cgi = do
 getWebEffects : MkHandlerFnTy -> List WebEffect
 getWebEffects (_, effs, _) = effs
 
-inspectFinalEnv : (effs : List EFFECT) -> Env IO effs -> (InitialisedCGI TaskRunning) -> (InitialisedCGI TaskRunning)
+inspectFinalEnv : (effs : List EFFECT) -> 
+                  Env IO effs -> 
+                  (InitialisedCGI TaskRunning) -> 
+                  (InitialisedCGI TaskRunning)
 inspectFinalEnv [] _ def = def
 inspectFinalEnv ((CGI (InitialisedCGI TaskRunning)) :: effs) ((ICgi st) :: vals) def = (ICgi st)
 inspectFinalEnv (_ :: effs) (_ :: vals) def = inspectFinalEnv effs vals def
 --Eff IO 
 addOutput : String -> CGIInfo -> CGIInfo
--- TODO: GetEnv on the CGI
-executeHandler : List (String, String) -> List (String, RegHandler) -> (InitialisedCGI TaskRunning) -> IO (InitialisedCGI TaskRunning, Bool)
-executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn of
-                                      Just (name, frm_ty) => case getHandler vars name frm_ty handlers cgi of
-                                        Just (fn, (PF effs ret conc_effs env fn')) => do (env', res) <- runEnv env fn'
-                                                                                         let cgi' = inspectFinalEnv conc_effs env' cgi
-                                                                                         pure (cgi', True)
-                                        Nothing => do let (ICgi st) = cgi
-                                                      let cgi' = (addOutput "Found handler field; could not execute" st)
-                                                      pure ((ICgi cgi'), False)
-                                      Nothing => do let (ICgi st) = cgi
-                                                    let cgi' = (addOutput "Could not find handler in vars / could not parse" st)
-                                                    pure ((ICgi cgi'), False)
 
+getFormHandler : List (String, String) ->
+                 List (String, RegHandler) -> 
+                 InitialisedCGI TaskRunning ->
+                 Maybe (PopFn, FormTy)
+getFormHandler vars handlers cgi = do handler <- (lookup "handler" vars)
+                                      (name, frm_ty) <- parseFormFn handler
+                                      (_, pf) <- getHandler' vars name frm_ty handlers cgi 
+                                      let (_, _, ret) = frm_ty
+                                      Just (pf, ret)
+{-
+ARGH RESOLVE THE F**KING MONAD TYPECLASS YOU PILE OF CRAP
+executeHandler : Maybe PopFn ->
+                 (ret_ty : FormTy) ->  
+                 (InitialisedCGI TaskRunning) ->
+                 IO (Maybe ((InitialisedCGI TaskRunning), (interpFormTy ret_ty)))
+executeHandler Nothing _ _ = pure Nothing               
+executeHandler (Just (PF w_effs ret_ty conc_effs env fn)) ret cgi with (decEq ret_ty ret)
+ executeHandler (Just (PF w_effs ret_ty conc_effs env fn)) ret_ty cgi | Yes refl = do (env', res) <- runEnv env fn
+                                                                                      let cgi' = inspectFinalEnv conc_effs env' cgi
+                                                                                      pure $ Just (cgi', res)
+ executeHandler (Just (PF w_effs ret_ty conc_effs env fn)) ret cgi    | No _ = pure Nothing
 
-
-
-
-
+-}
+ {-
+  Prelude.Monad.(>>=) (runEnv env fn) (\(env', res) => let cgi' = inspectFinalEnv conc_effs env' cgi in
+                                                           (pure $ Just (cgi', res))) -}
+{-                                                                    -}
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
 mkForm : String -> String -> UserForm -> SerialisedForm
 mkForm name action frm = runPure [FR O [] [] ("<form name=\"" ++ name ++ 
@@ -276,8 +289,8 @@ finishTask = FinishRun
 writeHeaders : EffM m [CGI (InitialisedCGI TaskCompleted)] [CGI (InitialisedCGI HeadersWritten)] ()
 writeHeaders = WriteHeaders
 
-writeContent : String -> EffM m [CGI (InitialisedCGI HeadersWritten)] [CGI (InitialisedCGI ContentWritten)] ()
-writeContent s = (WriteContent s)
+writeContent : EffM m [CGI (InitialisedCGI HeadersWritten)] [CGI (InitialisedCGI ContentWritten)] ()
+writeContent = WriteContent
 
 abstract
 setCookie : String -> String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
@@ -292,8 +305,17 @@ addForm : String -> String -> UserForm -> Eff m [CGI (InitialisedCGI TaskRunning
 addForm name action form = (AddForm name action form)
 
 abstract
-handleForm : List (String, RegHandler) -> Eff m [CGI (InitialisedCGI TaskRunning)] Bool
-handleForm handlers = (HandleForm handlers)
+handleForm : Maybe PopFn -> (ret : FormTy) -> Eff IO [CGI (InitialisedCGI TaskRunning)] (Maybe (interpFormTy ret))
+handleForm fn ret = (HandleForm fn ret)
+
+abstract
+getHandler : List (String, RegHandler) -> Eff IO [CGI (InitialisedCGI TaskRunning)] (Maybe (PopFn, FormTy))
+getHandler handlers = (GetHandler handlers)
+
+unifyReturnTypes : (a : FormTy) -> (b : FormTy) -> (interpFormTy a) -> Maybe (interpFormTy b)
+unifyReturnTypes x y val with (decEq x y)
+  unifyReturnTypes y y val | Yes refl = Just val
+  unifyReturnTypes x y _   | No _ = Nothing
 
 -- Handler for CGI in the IO context
 instance Handler Cgi IO where
@@ -327,7 +349,7 @@ instance Handler Cgi IO where
                                        k (ICgi st) ()
                                        
   -- Handle writing out headers and content
-  handle (ICgi st) (WriteContent s) k = do --putStrLn ("OC: " ++ s)
+  handle (ICgi st) WriteContent k = do --putStrLn ("OC: " ++ s)
                                            putStrLn (Output st)
                                            k (ICgi st) ()
 
@@ -363,18 +385,39 @@ instance Handler Cgi IO where
 
   handle (ICgi st) (AddForm name action form) k = k (ICgi $ addOutput (mkForm name action form) st) ()
 
-  -- TODO: allow GET vars
-  handle (ICgi st) (HandleForm handlers) k = do let post_vars = POST st
-                                                (cgi', res) <- executeHandler post_vars handlers (ICgi st)
-                                                -- *really* need to update CGI state, and allow return vals
-                                                k cgi' res
+  handle (ICgi st) (GetHandler handlers) k = do let post_vars = POST st
+                                                k (ICgi st) (getFormHandler post_vars handlers (ICgi st)) 
 
+{-
+unifyReturnTypes : (a : FormTy) -> (b : FormTy) -> (interpFormTy a) -> Maybe (interpFormTy b)
+unifyReturnTypes x y val with (decEq x y)
+  unifyReturnTypes y y val | Yes refl = val
+  unifyReturnTypes x y _   | No _ = Nothing
+  -}
+  -- TODO: allow GET vars
+  handle (ICgi st) (HandleForm pf ret) k = case pf of
+                                              Just (PF w_effs ret_ty effs env fn) => 
+                                                do (env', res) <- runEnv env fn
+                                                   case unifyReturnTypes ret_ty ret res of
+                                                        Just res' => do
+                                                          let cgi' = inspectFinalEnv effs env' (ICgi st)
+                                                          k cgi' (Just res')
+                                                        Nothing => k (ICgi st) Nothing
+                                              Nothing => k (ICgi st) Nothing
+                    
+                                                --Just (cgi', ret') => k cgi' (Just ret')
+                                                --Nothing => k cgist Nothing -- cleanup!
+
+    {- let post_vars = POST st
+                                                (cgi', res) <- executeHandler post_vars handlers (ICgi st)
+                                                k cgi' res
+                                                -}
 -- Internal mechanism to run the user-specified action
 private
 runCGI' : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> 
           CGIProg effs a -> 
           EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
-runCGI' init_effs action = do c <- initialise 
+runCGI' init_effs action = do initialise 
                               -- Transition to TaskRunning
                               startTask
                               -- Perform the user-defined action and collect the result
@@ -384,7 +427,7 @@ runCGI' init_effs action = do c <- initialise
                               -- Write out the headers
                               writeHeaders
                               -- Write out the content
-                              writeContent c
+                              writeContent 
                               -- Finally, return the result
                               pure res 
 
@@ -393,6 +436,8 @@ runCGI : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> CGIProg effs a -
 runCGI init_effs act = do result <- run [()] (runCGI' init_effs act)
                           pure result
 
+initCgiState : InitialisedCGI TaskRunning
+initCgiState = ICgi (CGIInf [] [] [] "" "" "this shouldn't happen") 
 
 getWebEnv' [] _ = []
 getWebEnv' (CgiEffect :: xs) cgi = (cgi) :: getWebEnv' xs cgi

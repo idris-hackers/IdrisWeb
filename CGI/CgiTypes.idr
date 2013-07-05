@@ -205,6 +205,11 @@ using (G : Vect FormTy n)
 UserForm = Eff id [FORM (FormRes [])] String -- Making a form is a pure function (atm)
 
 
+data PopFn : Type where
+  PF : (w_effs : List WebEffect) -> (ret_ty : FormTy) -> 
+       (effs : List EFFECT) -> (env : Effects.Env IO effs) -> 
+       Eff IO effs (interpFormTy ret_ty) -> PopFn
+
 
 -- CGI Effect
 public
@@ -264,7 +269,7 @@ data Cgi : Effect where
   WriteHeaders : Cgi (InitialisedCGI TaskCompleted) (InitialisedCGI HeadersWritten) ()
 
   -- Write content, transition to content written state
-  WriteContent : String -> Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
+  WriteContent : Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
 
   -- Add cookie
   -- TODO: Add expiry date in here once I've finished the basics
@@ -281,23 +286,21 @@ data Cgi : Effect where
             UserForm -> 
             Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
+  GetHandler : List (String, RegHandler) ->
+               Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning)
+               (Maybe (PopFn, FormTy))
+
   -- Attempts to handle a form, given a list of available handlers
-  HandleForm : List (String, RegHandler) -> 
-               Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) Bool
+  HandleForm : Maybe PopFn -> 
+               (ret_ty : FormTy) ->
+               Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) 
+               (Maybe (interpFormTy ret_ty))
 
 
 CGI t = MkEff t Cgi
 
 
 CGIProg effs a = Eff IO (CGI (InitialisedCGI TaskRunning) :: effs) a
-
-
-
-
-
-
-
-
 
 interpFnTy : Vect FormTy n -> Type
 interpFnTy tys = interpFnTy' (reverse tys)
@@ -311,10 +314,5 @@ SerialisedForm : Type
 SerialisedForm = String
 
 
-
-data PopFn : Type where
-  PF : (w_effs : List WebEffect) -> (ret_ty : FormTy) -> 
-       (effs : List EFFECT) -> (env : Effects.Env IO effs) -> 
-       Eff IO effs (interpFormTy ret_ty) -> PopFn
 
 
