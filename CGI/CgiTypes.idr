@@ -92,7 +92,7 @@ total
 interpWebEffect : WebEffect -> EFFECT
 interpWebEffect CgiEffect = (CGI (InitialisedCGI TaskRunning))
 interpWebEffect SqliteEffect = (SQLITE ())
-interpWebEffect SessionEffect = (SESSION (SessionRes Uninitialised))
+interpWebEffect SessionEffect = (SESSION (SessionRes SessionUninitialised))
 
 interpWebEffects : List WebEffect -> List EFFECT
 interpWebEffects [] = []
@@ -253,6 +253,9 @@ data Cgi : Effect where
 
   -- Lookup a variable in the POST variables
   QueryPostVar : String -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) (Maybe String)
+
+  -- Lookup a cookie from the cookie variables
+  QueryCookieVar : String -> Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) (Maybe String)
 
   -- Retrieves the current output
   GetOutput : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) String

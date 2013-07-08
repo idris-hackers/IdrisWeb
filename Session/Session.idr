@@ -173,8 +173,8 @@ storeSessionData s_id (sr :: srs) = do res <- storeSessionRow s_id sr
                                             Left err => Effects.pure $ Left err
                                             Right () => Effects.pure $ Right ()
 
-deleteSession : SessionID -> Eff IO [SQLITE ()] (Either String ())
-deleteSession s_id = do
+removeSession: SessionID -> Eff IO [SQLITE ()] (Either String ())
+removeSession s_id = do
   open_db <- openDB DB_NAME
   if open_db then do
     let delete_sql = "DELETE FROM `sessiondata` WHERE `session_id` = ?"
@@ -202,7 +202,7 @@ deleteSession s_id = do
 -- Remove then store
 updateSessionData : SessionID -> SessionData -> Eff IO [SQLITE ()] (Either String ())
 updateSessionData s_id sd = do
-  del_res <- deleteSession s_id
+  del_res <- removeSession s_id
   case del_res of
        Left err => Effects.pure $ Left ("Error deleting: " ++ err)
        Right () => do store_res <- storeSessionData s_id (serialiseSession sd)
@@ -226,8 +226,8 @@ getSession s_id = do db_res <- run [()] (retrieveSessionData s_id)
       if we generate a new session (in order to prevent session fixation attacks (but how... hmmmm)
 -} 
 
-data SessionStep = Uninitialised
-                 | Initialised
+data SessionStep = SessionUninitialised
+                 | SessionInitialised
 
 abstract
 data SessionRes : SessionStep -> Type where
@@ -237,21 +237,54 @@ data SessionRes : SessionStep -> Type where
 
 data Session : Effect where
   -- Load a session from the database, given a session ID.
-  LoadSession : SessionID -> Session (SessionRes Uninitialised) (SessionRes Initialised) (Maybe SessionData)
+  LoadSession : SessionID -> Session (SessionRes SessionUninitialised) (SessionRes SessionInitialised) (Maybe SessionData)
   -- Updates the in-memory representation of the session
-  UpdateSession : SessionData -> Session (SessionRes Initialised) (SessionRes Initialised) ()
+  UpdateSession : SessionData -> Session (SessionRes SessionInitialised) (SessionRes SessionInitialised) ()
   -- Given a session data set, creates a new session
-  CreateSession : SessionData -> Session (SessionRes Uninitialised) (SessionRes Initialised) (Maybe SessionID)
+  CreateSession : SessionData -> Session (SessionRes SessionUninitialised) (SessionRes SessionInitialised) (Maybe SessionID)
   -- Delete the current session
-  DeleteSession : Session (SessionRes Initialised) (SessionRes Uninitialised) Bool -- Hmmm... Error handling? How?
+  DeleteSession : Session (SessionRes SessionInitialised) (SessionRes SessionUninitialised) Bool -- Hmmm... Error handling? How?
   -- Updates the DB with the new session data, discards the in-memory resources
-  WriteToDB : Session (SessionRes Initialised) (SessionRes Uninitialised) Bool
+  WriteToDB : Session (SessionRes SessionInitialised) (SessionRes SessionUninitialised) Bool
   -- Discards changes to the current session, disposes of resources
-  DiscardSessionChanges : Session (SessionRes Initialised) (SessionRes Uninitialised) ()
+  DiscardSessionChanges : Session (SessionRes SessionInitialised) (SessionRes SessionUninitialised) ()
 
 
 SESSION : Type -> EFFECT
 SESSION t = MkEff t Session
+
+loadSession : SessionID -> EffM m [SESSION (SessionRes SessionUninitialised)]
+                                  [SESSION (SessionRes SessionInitialised)] 
+                                  (Maybe SessionData)
+loadSession s_id = (LoadSession s_id)
+
+updateSession : SessionData -> Eff m [SESSION (SessionRes SessionInitialised)] ()
+updateSession sd = (UpdateSession sd)
+
+createSession : SessionData -> EffM m [SESSION (SessionRes SessionUninitialised)]
+                                      [SESSION (SessionRes SessionInitialised)]
+                                      (Maybe SessionID)
+createSession sd = (CreateSession sd)
+
+deleteSession : EffM m [SESSION (SessionRes SessionInitialised)] 
+                       [SESSION (SessionRes SessionUninitialised)]
+                       Bool
+deleteSession = DeleteSession 
+
+writeSessionToDB : EffM m [SESSION (SessionRes SessionInitialised)] 
+                          [SESSION (SessionRes SessionUninitialised)]
+                          Bool
+writeSessionToDB = WriteToDB
+
+discardSession : EffM m [SESSION (SessionRes SessionInitialised)] 
+                        [SESSION (SessionRes SessionUninitialised)]
+                        ()
+discardSession = DiscardSessionChanges
+
+
+
+
+
 
 instance Handler Session IO where
   -- Grab the session from the DB given the session key.
@@ -274,7 +307,7 @@ instance Handler Session IO where
 
   -- Delete a session from the database, and dispose of our resources.
   handle (ValidSession s_id _) DeleteSession k = do
-    delete_res <- run [()] (deleteSession s_id)
+    delete_res <- run [()] (removeSession s_id)
     case delete_res of
          Left err => k InvalidSession False
          Right () => k InvalidSession True

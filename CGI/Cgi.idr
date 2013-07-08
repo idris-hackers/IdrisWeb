@@ -252,6 +252,9 @@ abstract
 queryGetVar : String -> Eff m [CGI (InitialisedCGI TaskRunning)] (Maybe String)
 queryGetVar query = (QueryGetVar query)
 
+abstract
+queryCookieVar : String -> Eff m [CGI (InitialisedCGI TaskRunning)] (Maybe String)
+queryCookieVar query = (QueryCookieVar query)
 
 abstract
 queryPostVar : String -> Eff m [CGI (InitialisedCGI TaskRunning)] (Maybe String)
@@ -315,6 +318,8 @@ instance Handler Cgi IO where
   handle (ICgi st) (QueryGetVar q) k = k (ICgi st) (lookup q (GET st))
 
   handle (ICgi st) (QueryPostVar q) k = k (ICgi st) (lookup q (POST st))
+
+  handle (ICgi st) (QueryCookieVar q) k = k (ICgi st) (lookup q (Cookies st))
 
   handle (ICgi st) GetOutput k = k (ICgi st) (Output st)
 
