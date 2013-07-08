@@ -13,7 +13,6 @@ sampleHandler _ _ = do output "There was an error processing form data."
 sampleForm : EffM id [FORM (FormRes [])] [FORM (FormRes [])] String --UserForm
 sampleForm = do addTextBox FormString "Simon"
                 addTextBox FormInt 21
-                addTextBox FormInt 21
                 -- TODO: ideally, we'd have something like just "addSubmit sampleHandler" or grab it from the list of registered handlers
                 addSubmit sampleHandler "sampleHandler" [CgiEffect] FormBool 
 
@@ -36,5 +35,5 @@ cgiAction = do output "<h1>Simon's awesome form stuff!</h1>\n"
                                   pure ()
 
 main : IO ()
-main = do runCGI [ICgi (CGIInf [] [] [] "" "" "this shouldn't happen"), ()] cgiAction
+main = do runCGI [initCGIState] cgiAction
           pure ()

@@ -12,6 +12,12 @@ import Decidable.Equality
 import SQLite
 
 %access public -- for now
+
+-- Bit of a hack for now, until I can get it so that the user doesn't
+-- have to type this
+initCGIState : (InitialisedCGI TaskRunning)
+initCGIState = ICgi (CGIInf [] [] [] "" "" "this shouldn't happen")
+
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String
 showFormVal FormString s = s
 showFormVal FormInt i = show i
@@ -264,7 +270,7 @@ abstract
 flush : Eff m [CGI (InitialisedCGI TaskRunning)] ()
 flush = Flush
 
-initialise : EffM m [CGI ()] [CGI (InitialisedCGI Initialised)] String
+initialise : EffM m [CGI ()] [CGI (InitialisedCGI Initialised)] ()
 initialise = Init
 
 startTask : EffM m [CGI (InitialisedCGI Initialised)] [CGI (InitialisedCGI TaskRunning)] ()
@@ -276,8 +282,8 @@ finishTask = FinishRun
 writeHeaders : EffM m [CGI (InitialisedCGI TaskCompleted)] [CGI (InitialisedCGI HeadersWritten)] ()
 writeHeaders = WriteHeaders
 
-writeContent : String -> EffM m [CGI (InitialisedCGI HeadersWritten)] [CGI (InitialisedCGI ContentWritten)] ()
-writeContent s = (WriteContent s)
+writeContent : EffM m [CGI (InitialisedCGI HeadersWritten)] [CGI (InitialisedCGI ContentWritten)] ()
+writeContent = WriteContent
 
 abstract
 setCookie : String -> String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
@@ -327,9 +333,9 @@ instance Handler Cgi IO where
                                        k (ICgi st) ()
                                        
   -- Handle writing out headers and content
-  handle (ICgi st) (WriteContent s) k = do --putStrLn ("OC: " ++ s)
-                                           putStrLn (Output st)
-                                           k (ICgi st) ()
+  handle (ICgi st) WriteContent  k = do --putStrLn ("OC: " ++ s)
+                                         putStrLn (Output st)
+                                         k (ICgi st) ()
 
   handle (ICgi st) Flush k = do putStrLn (Output st)
                                 k (ICgi st) ()
@@ -346,7 +352,7 @@ instance Handler Cgi IO where
             
     let cgi_info = (CGIInf get_vars post_vars cookies agent
                     "Content-type: text/html\n" "")
-    k (ICgi cgi_info) content
+    k (ICgi cgi_info) ()
 
   handle (ICgi st) (OutputData s) k  = do let new_cgi_info = addOutput s st
                                           k (ICgi new_cgi_info) ()
@@ -374,7 +380,7 @@ private
 runCGI' : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> 
           CGIProg effs a -> 
           EffM IO [CGI ()] [CGI (InitialisedCGI ContentWritten)] a
-runCGI' init_effs action = do c <- initialise 
+runCGI' init_effs action = do initialise 
                               -- Transition to TaskRunning
                               startTask
                               -- Perform the user-defined action and collect the result
@@ -384,7 +390,7 @@ runCGI' init_effs action = do c <- initialise
                               -- Write out the headers
                               writeHeaders
                               -- Write out the content
-                              writeContent c
+                              writeContent
                               -- Finally, return the result
                               pure res 
 

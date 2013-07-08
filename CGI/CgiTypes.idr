@@ -252,7 +252,7 @@ data Cgi : Effect where
   Flush : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
   -- Initialise the internal CGI State
-  Init : Cgi () (InitialisedCGI Initialised) String
+  Init : Cgi () (InitialisedCGI Initialised) ()
 
   -- Transition to task started state
   StartRun : Cgi (InitialisedCGI Initialised) (InitialisedCGI TaskRunning) ()
@@ -264,7 +264,7 @@ data Cgi : Effect where
   WriteHeaders : Cgi (InitialisedCGI TaskCompleted) (InitialisedCGI HeadersWritten) ()
 
   -- Write content, transition to content written state
-  WriteContent : String -> Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
+  WriteContent : Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
 
   -- Add cookie
   -- TODO: Add expiry date in here once I've finished the basics
@@ -288,16 +288,7 @@ data Cgi : Effect where
 
 CGI t = MkEff t Cgi
 
-
 CGIProg effs a = Eff IO (CGI (InitialisedCGI TaskRunning) :: effs) a
-
-
-
-
-
-
-
-
 
 interpFnTy : Vect FormTy n -> Type
 interpFnTy tys = interpFnTy' (reverse tys)
