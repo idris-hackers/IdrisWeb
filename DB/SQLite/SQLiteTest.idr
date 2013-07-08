@@ -71,12 +71,14 @@ testSelect = do
           Effects.pure $ Left err
                                        
 main : IO ()
-main = do select_res <- run [()] testSelect
+main =
+{-  do select_res <- run [()] testSelect
           case select_res of
                Left err => putStrLn $ "Error: " ++ err
                Right results => do mapM (putStrLn . show) results
                                    pure ()
-  --do res <- run [()] (testInsert "SimonJF" 21)
-         -- case res of Left err => putStrLn $ "Error inserting: " ++ err
-         --             Right () => putStrLn "Operation completed successfully!"
+                                   -}
+  do res <- run [()] (testInsert "SimonJF" (fromInteger 21))
+     case res of Left err => putStrLn $ "Error inserting: " ++ err
+                 Right () => putStrLn "Operation completed successfully!"
 
