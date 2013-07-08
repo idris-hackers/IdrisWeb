@@ -32,10 +32,6 @@ testInsert name age = do
                   err <- connFail
                   Effects.pure $ Left err
 
--- Why is this not a library function? O.o
-mapM : Monad m => (a -> m b) -> List a -> m (List b)
-mapM f xs = sequence $ map f xs
-
 
                       
 collectResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List (String, Int))

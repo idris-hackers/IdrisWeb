@@ -2,6 +2,7 @@ module IdrisWeb.CGI.CgiTypes
 import Effects
 import Decidable.Equality
 import SQLite
+import Session
 %access public
 -- Types used by the CGI module
 
@@ -54,30 +55,44 @@ data InitialisedCGI : CGIStep -> Type where
 
 data WebEffect = CgiEffect
                | SqliteEffect
+               | SessionEffect
 
 cgiNotSqlite : CgiEffect = SqliteEffect -> _|_
 cgiNotSqlite refl impossible
+
+cgiNotSession : CgiEffect = SessionEffect -> _|_
+cgiNotSession refl impossible
+
+sqliteNotSession : SqliteEffect = SessionEffect -> _|_
+sqliteNotSession refl impossible
 
 instance DecEq WebEffect where
   decEq CgiEffect CgiEffect = Yes refl
   decEq SqliteEffect SqliteEffect = Yes refl
   decEq CgiEffect SqliteEffect = No cgiNotSqlite
   decEq SqliteEffect CgiEffect = No (negEqSym cgiNotSqlite)
-
+  decEq CgiEffect SessionEffect = No cgiNotSession
+  decEq SessionEffect CgiEffect = No (negEqSym cgiNotSession)
+  decEq SessionEffect SessionEffect = Yes refl
+  decEq SqliteEffect SessionEffect = No sqliteNotSession
+  decEq SessionEffect SqliteEffect = No (negEqSym sqliteNotSession)
 
 instance Eq WebEffect where
   (==) CgiEffect CgiEffect = True
   (==) SqliteEffect SqliteEffect = True
+  (==) SessionEffect SessionEffect = True
   (==) _ _ = False
 
 instance Show WebEffect where
   show CgiEffect = "cgi"
   show SqliteEffect = "sqlite"
+  show SessionEffect = "session"
 
 total
 interpWebEffect : WebEffect -> EFFECT
 interpWebEffect CgiEffect = (CGI (InitialisedCGI TaskRunning))
 interpWebEffect SqliteEffect = (SQLITE ())
+interpWebEffect SessionEffect = (SESSION (SessionRes Uninitialised))
 
 interpWebEffects : List WebEffect -> List EFFECT
 interpWebEffects [] = []

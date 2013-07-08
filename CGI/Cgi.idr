@@ -10,6 +10,7 @@ import CgiTypes
 import Parser
 import Decidable.Equality
 import SQLite
+import Session
 
 %access public -- for now
 

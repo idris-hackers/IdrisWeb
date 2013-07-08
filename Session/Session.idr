@@ -13,6 +13,7 @@ module IdrisWeb.Session.Session
 import SQLite
 import Effects
 import Parser
+import RandC
 %access public
 
 -- SessionID should be some long-ish random string (hash?)
@@ -96,6 +97,8 @@ collectResults = do
       NoMoreRows => Effects.pure []
       StepFail => Effects.pure []
 
+-- TODO: We should have a separate table for Session ID -> Expiry, and not return the data if
+-- the session has expired
 retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either String SerialisedSession)
 retrieveSessionData s_id = do
   open_db <- openDB DB_NAME
@@ -168,13 +171,13 @@ storeSessionData s_id [] = Effects.pure $ Right ()
 storeSessionData s_id (sr :: srs) = do res <- storeSessionRow s_id sr
                                        case res of
                                             Left err => Effects.pure $ Left err
-                                            Right () => storeSessionData s_id srs
+                                            Right () => Effects.pure $ Right ()
 
 deleteSession : SessionID -> Eff IO [SQLITE ()] (Either String ())
 deleteSession s_id = do
   open_db <- openDB DB_NAME
   if open_db then do
-    let delete_sql = "DELETE FROM `sessiondata` WHERE `sessino_id` = ?"
+    let delete_sql = "DELETE FROM `sessiondata` WHERE `session_id` = ?"
     sql_prep_res <- prepareStatement delete_sql
     if sql_prep_res then do
       startBind
@@ -215,22 +218,93 @@ getSession s_id = do db_res <- run [()] (retrieveSessionData s_id)
                           Right ss => pure $ deserialiseSession ss
 
 
-
-{-
-getSession : (tys : Vect SessionDataType n) -> (names : Vect String n) -> SessionID -> IO (Maybe (interpSerialisedTys tys))
-getSession tys names id = do db_res <- run [()] (retrieveSessionData id)
-                             case db_res of
-                                  Left err => pure Nothing
-                                  Right xs => pure Nothing --pure $ 
-                                             -}
-
--- TODO: This should be a common definition somewhere, I think
-mapM : Monad m => (a -> m b) -> List a -> m (List b)
-mapM fn xs = sequence $ map fn xs
-
 {- Session effect:
    We should be able to create, update and delete sessions.
    We should only be able to update and delete valid sessions.
    We should only be able to create sessions when we don't have an active session.
-   We should only
+   We really should only be able to populate a session after authentication 
+      if we generate a new session (in order to prevent session fixation attacks (but how... hmmmm)
 -} 
+
+data SessionStep = Uninitialised
+                 | Initialised
+
+abstract
+data SessionRes : SessionStep -> Type where
+  InvalidSession : SessionRes s
+  ValidSession : SessionID -> SessionData -> SessionRes s
+
+
+data Session : Effect where
+  -- Load a session from the database, given a session ID.
+  LoadSession : SessionID -> Session (SessionRes Uninitialised) (SessionRes Initialised) (Maybe SessionData)
+  -- Updates the in-memory representation of the session
+  UpdateSession : SessionData -> Session (SessionRes Initialised) (SessionRes Initialised) ()
+  -- Given a session data set, creates a new session
+  CreateSession : SessionData -> Session (SessionRes Uninitialised) (SessionRes Initialised) (Maybe SessionID)
+  -- Delete the current session
+  DeleteSession : Session (SessionRes Initialised) (SessionRes Uninitialised) Bool -- Hmmm... Error handling? How?
+  -- Updates the DB with the new session data, discards the in-memory resources
+  WriteToDB : Session (SessionRes Initialised) (SessionRes Uninitialised) Bool
+  -- Discards changes to the current session, disposes of resources
+  DiscardSessionChanges : Session (SessionRes Initialised) (SessionRes Uninitialised) ()
+
+
+SESSION : Type -> EFFECT
+SESSION t = MkEff t Session
+
+instance Handler Session IO where
+  -- Grab the session from the DB given the session key.
+  -- If it exists, construct the resource and return the data.
+  -- If not, return nothing, and reflect the invalidity in the resource.
+  handle InvalidSession (LoadSession s_id) k = do
+    maybe_session <- getSession s_id
+    case maybe_session of
+         Just s_data => k (ValidSession s_id s_data) (Just s_data)
+         Nothing => k InvalidSession Nothing
+
+  -- Update the in-memory representation of the session.
+  handle (ValidSession s_id s_dat) (UpdateSession s_dat') k = 
+    k (ValidSession s_id s_dat') ()
+
+  -- If we're trying to update an invalid session, just let it fall
+  -- through.
+  handle (InvalidSession) (UpdateSession _) k =
+   k (InvalidSession) () 
+
+  -- Delete a session from the database, and dispose of our resources.
+  handle (ValidSession s_id _) DeleteSession k = do
+    delete_res <- run [()] (deleteSession s_id)
+    case delete_res of
+         Left err => k InvalidSession False
+         Right () => k InvalidSession True
+
+  handle (InvalidSession) DeleteSession k = k InvalidSession False
+
+  -- Writes a session to the DB, and disposes of the in-memory resources
+  handle (ValidSession s_id s_dat) WriteToDB k = do
+    update_res <- run [()] (updateSessionData s_id s_dat)
+    case update_res of
+         Left err => k InvalidSession False
+         Right () => k InvalidSession True
+         
+  handle InvalidSession WriteToDB k = k InvalidSession False
+
+  -- Simply discard the resource without doing any writes
+  handle (ValidSession _ _) DiscardSessionChanges k = k InvalidSession ()
+  handle (InvalidSession) DiscardSessionChanges k = k InvalidSession ()
+
+  -- Creates a new session.
+  -- BIG TODO: This random number gen is extremely rudimentary, and not
+  -- secure enough for actual use.
+  -- We've also got no guarantees that the IDs generated will be unique... 
+  -- This can be fixed by having some sort of property variable in the session
+  -- DB, which we increment each time, and hash alongside the random number.
+  -- While OK for a quick prototype, this *REALLY* must be fixed.
+  handle InvalidSession (CreateSession sd) k = do
+    rand_id <- getRandom 1000000000 21474836476 -- FIXME: This is a pathetic level of entropy...
+    let s_id = show rand_id -- Some hash function would be here, typically
+    store_res <- run [()] (storeSessionData s_id (serialiseSession sd))
+    case store_res of
+      Left err' => k InvalidSession Nothing
+      Right () => k (ValidSession s_id sd) (Just s_id)
