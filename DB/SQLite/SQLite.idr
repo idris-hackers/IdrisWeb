@@ -379,10 +379,15 @@ bindInt pos i = (BindInt pos i)
 bindFloat : ArgPos -> Float -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
 bindFloat pos i = (BindFloat pos i)
 
+natToInt : Nat -> Int
+natToInt O = 0
+natToInt (S k) = 1 + (natToInt k)
+
 bindText : ArgPos -> String -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
-bindText pos str = (BindText pos str (fromInteger str_len))
-  where str_len : Integer
-        str_len = cast (length str)
+bindText pos str = (BindText pos str str_len)
+  where 
+        str_len : Int
+        str_len = natToInt (length str)
 
 bindNull : ArgPos -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] Bool
 bindNull pos = (BindNull pos)

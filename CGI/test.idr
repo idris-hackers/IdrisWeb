@@ -1,6 +1,7 @@
 module Main
 import Cgi
 import Effects
+import Session
 
 total
 updateVar : String -> SessionDataType -> SessionData -> SessionData
@@ -20,42 +21,48 @@ incrementAndGetCount sd = case lookup "counter" sd of
 useSession : Maybe SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionInitialised)]
                                           [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised)]
                                           ()
-useSession (Just sd) = do count <- incrementAndGetCount sd
-                          output $ "You have visited this page " ++ (show count) ++ " time(s)!"
-                          writeSessionToDB
-                          pure ()
+useSession (Just sd) = do count <- lift (Drop (Keep (SubNil))) (incrementAndGetCount sd)
+                          lift (Keep (Drop (SubNil))) (output $ "You have visited this page " ++ (show count) ++ " time(s)!")
+                          lift (Drop (Keep (SubNil))) writeSessionToDB
+                          Effects.pure ()
 useSession Nothing = do output "There was a problem retrieving your session."
                         -- Delete the session for good measure
                         -- whoops, haven't written this yet
                         discardSession
+                        Effects.pure ()
                         
 
-foundSessionID : SessionID -> Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionInitialised)] ()
-foundSessionID s_id = do session_data <- loadSession s_id
+foundSessionID : SessionID -> EffM IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised)] 
+                                      [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised)] ()
+foundSessionID s_id = do session_data <- lift (Drop (Keep (SubNil))) (loadSession s_id)
                          -- Failure is handled by pattern matching in useSession
                          useSession session_data
+                         --lift (Drop (Keep (SubNil))) (useSession session_data)
+--                         lift (Drop (Keep (SubNil))) (discardSession)
                          --discardSession
                          pure ()
  
 doCGIStuff : Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised)] ()
-doCGIStuff = do output "Hello, world!\n"
+doCGIStuff = do lift (Keep (Drop (SubNil))) (output "Hello, world!\n")
                 -- TODO: Ideally, we wouldn't deal with this in a raw way like this
-                session_var <- queryCookieVar "session_id"
+                session_var <- lift (Keep (Drop (SubNil))) (queryCookieVar "session_id")
                 case session_var of
                     -- We've found a stored session ID in the cookie.
-                    Just s_id => foundSessionID
-                                 discardSession 
+                    Just s_id => foundSessionID s_id
+                                    --lift (Drop (Keep (SubNil))) discardSession
+                                    
                     Nothing =>  do let sd = [("counter", SInt 0)] ++ Prelude.List.Nil
-                                   sess_id <- createSession sd
+                                   sess_id <- lift (Drop (Keep (SubNil))) (createSession sd)
                                    case sess_id of 
-                                     Just s_id => do setCookie "session_id" s_id
+                                     Just s_id => do lift (Keep (Drop (SubNil))) (setCookie "session_id" s_id)
                                                      useSession (Just sd) -- hackity hack
-                                                     discardSession
-                                     Nothing => do output "There was an error creating a session for you :("
-                                                   discardSession
-                                                   
+                                                     -- discardSession
+                                     Nothing => do lift (Keep (Drop (SubNil))) $ output "There was an error creating a session for you :("
+                                                   lift (Drop (Keep (SubNil))) discardSession
+                                                                
 main : IO ()
 main = do
   runCGI [initCGIState, InvalidSession] doCGIStuff
   pure ()
+
 

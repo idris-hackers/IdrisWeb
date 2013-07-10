@@ -12,7 +12,7 @@
 module IdrisWeb.Session.Session
 import SQLite
 import Effects
-import Parser
+import SimpleParser
 import RandC
 %access public
 
@@ -21,7 +21,7 @@ SessionID : Type
 SessionID = String
 
 DB_NAME : String
-DB_NAME = "sessions.db"
+DB_NAME = "/tmp/sessions.db"
 
 -- I think in this circumstance, tagged data types
 -- would be better, since we're not passing directly
@@ -103,7 +103,7 @@ retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either String SerialisedS
 retrieveSessionData s_id = do
   open_db <- openDB DB_NAME
   if open_db then do
-    let sql = "SELECT ses_key, key, val, ty FROM `sessiondata` WHERE `session_id` = ?"
+    let sql = "SELECT session_key, key, val, ty FROM `sessiondata` WHERE `session_key` = ?"
     sql_prep_res <- prepareStatement sql
     if sql_prep_res then do
       startBind
@@ -138,7 +138,7 @@ storeSessionRow : SessionID -> SerialisedSessionEntry -> Eff IO [SQLITE ()] (Eit
 storeSessionRow s_id (key, val, ty) = do
   open_db <- openDB DB_NAME
   if open_db then do
-    let insert_sql = "INSERT INTO `sessiondata` (`session_key`, `key`, `val`, `ty`) VALUES (?, ?, ?)"
+    let insert_sql = "INSERT INTO `sessiondata` (`session_key`, `key`, `val`, `ty`) VALUES (?, ?, ?, ?)"
     sql_prep_res <- prepareStatement insert_sql
     if sql_prep_res then do
       startBind
@@ -177,7 +177,7 @@ removeSession: SessionID -> Eff IO [SQLITE ()] (Either String ())
 removeSession s_id = do
   open_db <- openDB DB_NAME
   if open_db then do
-    let delete_sql = "DELETE FROM `sessiondata` WHERE `session_id` = ?"
+    let delete_sql = "DELETE FROM `sessiondata` WHERE `session_key` = ?"
     sql_prep_res <- prepareStatement delete_sql
     if sql_prep_res then do
       startBind
@@ -229,7 +229,7 @@ getSession s_id = do db_res <- run [()] (retrieveSessionData s_id)
 data SessionStep = SessionUninitialised
                  | SessionInitialised
 
-abstract
+public
 data SessionRes : SessionStep -> Type where
   InvalidSession : SessionRes s
   ValidSession : SessionID -> SessionData -> SessionRes s

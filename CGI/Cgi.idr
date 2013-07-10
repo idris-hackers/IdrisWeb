@@ -7,7 +7,7 @@ module IdrisWeb.Effect.Cgi
 import Effects
 import CgiUtils
 import CgiTypes
-import Parser
+import SimpleParser
 import Decidable.Equality
 import SQLite
 import Session
@@ -48,11 +48,6 @@ instance Handler Form m where
 
 
 {- Form handling stuff -}
-lengthAsInt : List a -> Int
-lengthAsInt xs = fromInteger lengthAsInteger
-  where lengthAsInteger : Integer
-        lengthAsInteger = cast $ length xs
-
 -- Gets the serialised value as the given type, if it's possible
 --total
 parseSerialisedValue : (ty : FormTy) -> String -> Maybe (interpFormTy ty)
@@ -165,7 +160,6 @@ getHandler vars handler_name handler_type handlers cgi = do
                               rh_fn' <- checkFunctions rh_type handler_type rh_fn
                               let f_rh = (RH handler_type rh_fn')
                               let (tys, effs, ret) = handler_type
-                              let arg_len = lengthAsInt tys 
                               evalFn handler_type 0 0 vars rh_fn' cgi
 
 getWebEffects : MkHandlerFnTy -> List WebEffect
@@ -175,6 +169,14 @@ inspectFinalEnv : (effs : List EFFECT) -> Env IO effs -> (InitialisedCGI TaskRun
 inspectFinalEnv [] _ def = def
 inspectFinalEnv ((CGI (InitialisedCGI TaskRunning)) :: effs) ((ICgi st) :: vals) def = (ICgi st)
 inspectFinalEnv (_ :: effs) (_ :: vals) def = inspectFinalEnv effs vals def
+
+{-
+inspectCGIEnv : CGIProg effs a -> Env IO effs -> (InitialisedCGI TaskRunning) -> (InitialisedCGI TaskRunning)
+inspectCGIEnv fn [] def = def
+inspectCGIEnv fn ((ICgi st) :: xs) _ = (ICgi st)
+inspectCGIEnv fn (_ :: xs) def = inspectCGIEnv fn xs def
+-}
+
 --Eff IO 
 addOutput : String -> CGIInfo -> CGIInfo
 -- TODO: GetEnv on the CGI
@@ -205,7 +207,7 @@ mkForm name action frm = runPure [FR O [] [] ("<form name=\"" ++ name ++
 -- In handle, then match on (ICGI s) to get access to state
 -- State mutation functions, allowing for addition of headers / output
 addHeaders : String -> CGIInfo -> CGIInfo
-addHeaders str st = record { Headers = Headers st ++ str } st
+addHeaders str st = record { Headers = Headers st ++ str ++ "\r\n" } st
 
 --addOutput : String -> CGIInfo -> CGIInfo
 addOutput str st = record { Output = Output st ++ str } st
@@ -231,7 +233,7 @@ addOutput str st = record { Output = Output st ++ str } st
 
 abstract
 runAction : Env IO (CGI (InitialisedCGI TaskRunning) :: effs) -> CGIProg effs a -> Eff m [CGI (InitialisedCGI TaskRunning)] a
-runAction init_effs act = (RunAction init_effs act)
+runAction init_env act = (RunAction init_env act)
 
 getInfo : Eff m [CGI (InitialisedCGI TaskRunning)] CGIInfo
 getInfo = GetInfo
@@ -293,7 +295,7 @@ abstract
 setCookie : String -> String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
 setCookie name val = (SetCookie name val)
 
-abstract
+public
 output : String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
 output s = (OutputData s)
 
@@ -335,7 +337,8 @@ instance Handler Cgi IO where
   handle (ICgi st) FinishRun k = k (ICgi st) ()
 
   -- Handle writing out headers and content
-  handle (ICgi st) WriteHeaders k = do putStrLn (Headers st)
+  handle (ICgi st) WriteHeaders k = do putStr (Headers st)
+                                       putStr "\r\n"
                                        k (ICgi st) ()
                                        
   -- Handle writing out headers and content
@@ -370,8 +373,8 @@ instance Handler Cgi IO where
                                                let new_info = addHeaders set_cookie_header st
                                                k (ICgi new_info) ()
 
-  handle (ICgi st) (RunAction effs act) k = do (((ICgi st') :: env'), result) <- runEnv ((ICgi st) :: effs) act 
-                                               k (ICgi st') result
+  handle (ICgi st) (RunAction ((ICgi _) :: env) act) k = do (((ICgi st') :: env'), result) <- runEnv ((ICgi st) :: env) act 
+                                                            k (ICgi st') result
 
   handle (ICgi st) (AddForm name action form) k = k (ICgi $ addOutput (mkForm name action form) st) ()
 
@@ -402,8 +405,8 @@ runCGI' init_effs action = do initialise
 
 public
 runCGI : Env IO ((CGI (InitialisedCGI TaskRunning)) :: effs) -> CGIProg effs a -> IO a
-runCGI init_effs act = do result <- run [()] (runCGI' init_effs act)
-                          pure result
+runCGI init_env act = do result <- run [()] (runCGI' init_env act)
+                         pure result
 
 
 getWebEnv' [] _ = []
