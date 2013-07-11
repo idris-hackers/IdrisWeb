@@ -227,7 +227,6 @@ getSession s_id = do db_res <- run [()] (retrieveSessionData s_id)
                           Left err => pure Nothing
                           Right ss => pure $ deserialiseSession ss
 
-
 {- Session effect:
    We should be able to create, update and delete sessions.
    We should only be able to update and delete valid sessions.
@@ -259,6 +258,9 @@ data Session : Effect where
   -- Discards changes to the current session, disposes of resources
   DiscardSessionChanges : Session (SessionRes SessionInitialised) (SessionRes SessionUninitialised) ()
 
+  GetSessionID : Session (SessionRes SessionInitialised) (SessionRes SessionInitialised) (Maybe SessionID)
+  
+  GetSessionData : Session (SessionRes SessionInitialised) (SessionRes SessionInitialised) (Maybe SessionData)
 
 SESSION : Type -> EFFECT
 SESSION t = MkEff t Session
@@ -291,10 +293,13 @@ discardSession : EffM m [SESSION (SessionRes SessionInitialised)]
                         ()
 discardSession = DiscardSessionChanges
 
+getSessionID : Eff m [SESSION (SessionRes SessionInitialised)] 
+                     (Maybe SessionID)
+getSessionID = GetSessionID
 
-
-
-
+getSessionData : Eff m [SESSION (SessionRes SessionInitialised)]
+                       (Maybe SessionData)
+getSessionData = GetSessionData
 
 instance Handler Session IO where
   -- Grab the session from the DB given the session key.
@@ -351,3 +356,8 @@ instance Handler Session IO where
     case store_res of
       Left err' => k InvalidSession Nothing
       Right () => k (ValidSession s_id sd) (Just s_id)
+
+  handle (ValidSession s_id s_dat) GetSessionID k = k (ValidSession s_id s_dat) (Just s_id)
+  handle (ValidSession s_id s_dat) GetSessionData k = k (ValidSession s_id s_dat) (Just s_dat)
+  handle InvalidSession GetSessionID k = k InvalidSession Nothing
+  handle InvalidSession GetSessionData k = k InvalidSession Nothing
