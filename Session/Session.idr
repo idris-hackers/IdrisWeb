@@ -68,10 +68,20 @@ public
 SessionData : Type
 SessionData = List (String, SessionDataType)
 
+{-
+dirtyLog : String -> a -> a
+dirtyLog msg val = unsafePerformIO (do dirtyLog'; return val)
+  where 
+    dirtyLog' : IO ()
+    dirtyLog' = do
+    file <- openFile "/tmp/deserialise.log" Write
+    fwrite file msg
+-}
+
 deserialiseSession : SerialisedSession -> Maybe SessionData
 deserialiseSession ss = traverse (\(key, val, ty) => case (deserialiseVal ty val) of
-                                                        Just dat => Just (key, dat)
-                                                        Nothing => Nothing) ss
+                                                       Just dat => Just (key, dat)
+                                                       Nothing => Nothing) ss
 
 
 -- showSerialisedVal : (String, String)
@@ -88,10 +98,10 @@ collectResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] Serialis
 collectResults = do
   step_result <- nextRow
   case step_result of
-      StepComplete => do sess_key <- getColumnText 1
-                         key <- getColumnText 2
-                         val <- getColumnText 3
-                         ty <- getColumnText 4
+      StepComplete => do -- sess_key <- getColumnText 1
+                         key <- getColumnText 1
+                         val <- getColumnText 2
+                         ty <- getColumnText 3
                          xs <- collectResults
                          Effects.pure $ (key, val, ty) :: xs
       NoMoreRows => Effects.pure []
