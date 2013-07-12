@@ -1,13 +1,13 @@
 module Main
-import FormEffect
 import Effects
 import SQLite
-
+import CgiTypes
 
 -- We could also have SQLITE, or CGI here perhaps
-sampleHandler : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)] FormBool
-sampleHandler (Just name) (Just age) = (output ("Your name is " ++ name ++ " and you are " ++ (show age) ++ " years old.")) >>= (\_ pure True)
-sampleHandler _ _ = output "There was an error processing input data." >>= (\_ => pure False)
+sampleHandler : Maybe String -> Maybe Int -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)] FormBool
+sampleHandler (Just name) (Just age) (Just num) = ((output ("Your name is " ++ name 
+              ++ " and you are " ++ (show age) ++ " years old. You selected: " ++ (show num))) >>= (\_ pure True))
+sampleHandler _ _ _ = output "There was an error processing input data." >>= (\_ => pure False)
 
 
 -- Effects.>>= : (EffM m xs xs' a) -> (a -> EffM m xs' xs'' b) -> EffM xs xs'' b
@@ -15,7 +15,8 @@ sampleHandler _ _ = output "There was an error processing input data." >>= (\_ =
 myForm : UserForm
 myForm = do addTextBox FormString "Simon"
             addTextBox FormInt 21
-            addSubmit sampleHandler [SQLITE ()] ()
+            addSelectionBox FormInt [1,2,3,4] ["One", "Two", "Three", "Four"]
+            addSubmit sampleHandler [CgiEffect] FormBool
   --(addTextBox FormString "Simon") >>= ((\_ => addTextBox FormInt 21) >>= (\_ => addSubmit sampleHandler))
 
 

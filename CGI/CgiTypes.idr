@@ -184,18 +184,24 @@ interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
 
 
 using (G : Vect FormTy n)
-  data Env : Vect FormTy n -> Type where
-    Nil : Env Nil
-    (::) : interpFormTy a -> Env G -> Env (a :: G) 
-
   data FormRes : Vect FormTy n -> Type where
-    FR : Nat -> Env G -> Vect FormTy n -> String -> FormRes G
+    FR : Nat -> Vect FormTy n -> String -> FormRes G
 
   
   data Form : Effect where
     AddTextBox : (fty : FormTy) -> 
                  (val_ty : interpFormTy fty) -> 
                  Form (FormRes G) (FormRes (fty :: G)) () 
+
+    AddSelectionBox : (fty : FormTy) ->
+                      (vals : Vect (interpFormTy fty) n) ->
+                      (names : Vect String n) ->
+                      Form (FormRes G) (FormRes (fty :: G)) ()
+
+    AddRadioGroup : (fty : FormTy) ->
+                    (vals : Vect (interpFormTy fty) n) ->
+                    (names : Vect String n) ->
+                    Form (FormRes G) (FormRes (fty :: G)) ()
 
     Submit : interpCheckedFnTy G effs t -> 
              String -> 
@@ -210,6 +216,18 @@ using (G : Vect FormTy n)
                (interpFormTy fty) -> 
                EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
   addTextBox ty val = (AddTextBox ty val)
+
+  addSelectionBox : (fty : FormTy) ->
+                    (vals : Vect (interpFormTy fty) n) ->
+                    (names : Vect String n) ->
+                    Form (FormRes G) (FormRes (fty :: G)) ()
+  addSelectionBox ty vals names = (AddSelectionBox ty vals names)
+
+  addRadioGroup : (fty : FormTy) ->
+                  (vals : Vect (interpFormTy fty) n) ->
+                  (names : Vect String n) ->
+                  Form (FormRes G) (FormRes (fty :: G)) ()
+  addRadioGroup ty vals names = (AddRadioGroup ty vals names)
 
   addSubmit : (interpCheckedFnTy G effs t) -> 
               String -> 
@@ -229,13 +247,6 @@ data Cgi : Effect where
   -- Individual functions of the effect
   
   -- Action retrieval
-  -- ASKEDWIN: HALP! How to bind implicit variable?
-  -- GetAction : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) (CGIProg a)
-
-  -- State retrival / update
-  -- ASKEDWIN: Do we really need this?
-  --SetInfo : CGIInfo -> Cgi (InitialisedCGI Initialised) (InitialisedCGI Ini) ()
-
   GetInfo : Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) CGIInfo
   
   -- Output a string

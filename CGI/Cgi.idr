@@ -36,14 +36,27 @@ serialiseSubmit name tys effs ret = "<input type=\"hidden\" name=\"handler\" val
         serialised_effs = foldr (\eff, str => str ++ (show eff) ++ "-") "" effs
         serialised_ret =  (show ret) 
 
-instance Handler Form m where
-  handle (FR len vals tys ser_str) (Submit fn name effs t) k = do
-    k (FR O [] [] ser_str) (ser_str ++ "\n" ++ (serialiseSubmit name tys effs t))-- "serialised closure / submit button stuff here\n</form>")
-  handle (FR len vals tys ser_str) (AddTextBox fty val) k = do
-    k (FR (S len) (val :: vals) (fty :: tys) 
-      (ser_str ++ "<input name=\"inp" ++ (show $ len)  ++ "\" value=\"" ++ (showFormVal fty val) ++ "\"></input>\n")) ()
-    -- <input type="text" name="inpx" value="val">
 
+val_opts : (fty : FormTy) -> (Vect (interpFormTy fty) n) -> Vect String n -> String
+val_opts fty [] [] = ""
+val_opts fty (val :: vals) (name :: names) = "<option value=\"" ++ (showFormVal fty val) ++ "\">" 
+                                             ++ name ++ "</option>\n" ++ (val_opts fty vals names)
+-- = foldr (\val, b => ("<option value=\"" ++ (showFormVal val) ++ "\">" ++ )
+ 
+makeSelectBox : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> String 
+makeSelectBox name fty vals val_names = select ++ (val_opts fty vals val_names) ++ "</select><br />"
+  where select = "<select name=\"" ++ name ++ "\">\n"
+       
+instance Handler Form m where
+  handle (FR len tys ser_str) (Submit fn name effs t) k = do
+    k (FR O [] ser_str) (ser_str ++ "\n" ++ (serialiseSubmit name tys effs t))
+  handle (FR len tys ser_str) (AddTextBox fty val) k = do
+    k (FR (S len) (fty :: tys) 
+      (ser_str ++ "<input name=\"inp" ++ (show $ len)  ++ "\" value=\"" ++ (showFormVal fty val) ++ "\"></input><br />\n")) ()
+  handle (FR len tys ser_str) (AddSelectionBox fty opts names) k = do
+    k (FR (S len) (fty :: tys) 
+      (makeSelectBox ("inp" ++ (show len)) fty opts names)) ()
+    -- <input type="text" name="inpx" value="val">
 
 
 
@@ -200,7 +213,7 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
 
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
 mkForm : String -> String -> UserForm -> SerialisedForm
-mkForm name action frm = runPure [FR O [] [] ("<form name=\"" ++ name ++ 
+mkForm name action frm = runPure [FR O [] ("<form name=\"" ++ name ++ 
                          "\" action=\"" ++ action ++ "\" method=\"post\">\n")] frm
 
 
