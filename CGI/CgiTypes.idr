@@ -189,18 +189,22 @@ using (G : Vect FormTy n)
 
   
   data Form : Effect where
-    AddTextBox : (fty : FormTy) -> 
-                 (val_ty : interpFormTy fty) -> 
+    AddTextBox : (label : String) -> 
+                 (fty : FormTy) -> 
+                 (Maybe (interpFormTy fty)) -> 
                  Form (FormRes G) (FormRes (fty :: G)) () 
 
-    AddSelectionBox : (fty : FormTy) ->
-                      (vals : Vect (interpFormTy fty) n) ->
-                      (names : Vect String n) ->
+    AddSelectionBox : (label : String) ->
+                      (fty : FormTy) ->
+                      (vals : Vect (interpFormTy fty) m) ->
+                      (names : Vect String m) ->
                       Form (FormRes G) (FormRes (fty :: G)) ()
 
-    AddRadioGroup : (fty : FormTy) ->
-                    (vals : Vect (interpFormTy fty) n) ->
-                    (names : Vect String n) ->
+    AddRadioGroup : (label : String) -> 
+                    (fty : FormTy) ->
+                    (vals : Vect (interpFormTy fty) m) ->
+                    (names : Vect String m) ->
+                    (default : Int) ->
                     Form (FormRes G) (FormRes (fty :: G)) ()
 
     Submit : interpCheckedFnTy G effs t -> 
@@ -212,22 +216,26 @@ using (G : Vect FormTy n)
   FORM : Type -> EFFECT
   FORM t = MkEff t Form
 
-  addTextBox : (fty : FormTy) -> 
-               (interpFormTy fty) -> 
+  addTextBox : String ->
+               (fty : FormTy) -> -- Data type
+               (Maybe (interpFormTy fty)) ->  -- Default data value (optional)
                EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
-  addTextBox ty val = (AddTextBox ty val)
+  addTextBox label ty val = (AddTextBox label ty val)
 
-  addSelectionBox : (fty : FormTy) ->
-                    (vals : Vect (interpFormTy fty) n) ->
-                    (names : Vect String n) ->
-                    Form (FormRes G) (FormRes (fty :: G)) ()
-  addSelectionBox ty vals names = (AddSelectionBox ty vals names)
+  addSelectionBox : String ->
+                    (fty : FormTy) ->
+                    (vals : Vect (interpFormTy fty) j) ->
+                    (names : Vect String j) ->
+                    EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+  addSelectionBox label ty vals names = (AddSelectionBox label ty vals names)
 
-  addRadioGroup : (fty : FormTy) ->
-                  (vals : Vect (interpFormTy fty) n) ->
-                  (names : Vect String n) ->
-                  Form (FormRes G) (FormRes (fty :: G)) ()
-  addRadioGroup ty vals names = (AddRadioGroup ty vals names)
+  addRadioGroup : String ->
+                  (fty : FormTy) ->
+                  (vals : Vect (interpFormTy fty) j) ->
+                  (names : Vect String j) ->
+                  (default : Int) ->
+                  EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+  addRadioGroup label ty vals names default = (AddRadioGroup label ty vals names default)
 
   addSubmit : (interpCheckedFnTy G effs t) -> 
               String -> 

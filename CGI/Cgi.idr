@@ -11,7 +11,7 @@ import SimpleParser
 import Decidable.Equality
 import SQLite
 import Session
-
+import Debug.Trace
 %access public -- for now
 
 -- Bit of a hack for now, until I can get it so that the user doesn't
@@ -46,16 +46,35 @@ val_opts fty (val :: vals) (name :: names) = "<option value=\"" ++ (showFormVal 
 makeSelectBox : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> String 
 makeSelectBox name fty vals val_names = select ++ (val_opts fty vals val_names) ++ "</select><br />"
   where select = "<select name=\"" ++ name ++ "\">\n"
-       
+      
+-- TODO: The Int thing is pretty hacky, fix
+makeRadioGroup : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> Int -> String
+makeRadioGroup _ _ [] [] _ = ""
+makeRadioGroup name fty (val :: vals) (val_name :: val_names) k =  "<input type=\"radio\" name=\"" ++ 
+                                                                   name ++ 
+                                                                   "\" value=\"" ++ 
+                                                                   (showFormVal fty val) ++ 
+                                                                   (if k == 0 then "\" checked>" else "\">") ++ 
+                                                                   val_name ++ "<br />" ++ 
+                                                                   makeRadioGroup name fty vals val_names (k - 1)
+ 
+
+getDefValStr : (fty : FormTy) -> Maybe (interpFormTy fty) -> String
+getDefValStr ty (Just val) = "value=\"" ++ (showFormVal ty val) ++ "\" "
+getDefValStr ty Nothing = ""
+
 instance Handler Form m where
-  handle (FR len tys ser_str) (Submit fn name effs t) k = do
-    k (FR O [] ser_str) (ser_str ++ "\n" ++ (serialiseSubmit name tys effs t))
-  handle (FR len tys ser_str) (AddTextBox fty val) k = do
+  handle (FR len tys ser_str) (Submit fn name effs t) k = 
+    k (FR O [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs t) ++ "</td></tr></table>")
+  handle (FR len tys ser_str) (AddTextBox label fty def_val) k = 
     k (FR (S len) (fty :: tys) 
-      (ser_str ++ "<input name=\"inp" ++ (show $ len)  ++ "\" value=\"" ++ (showFormVal fty val) ++ "\"></input><br />\n")) ()
-  handle (FR len tys ser_str) (AddSelectionBox fty opts names) k = do
+      (ser_str ++ "<tr><td>" ++ label ++ "</td><td><input name=\"inp" ++ (show $ len) ++ "\" " ++ (getDefValStr fty def_val) ++ "\"></input></td></tr>\n")) ()
+  handle (FR len tys ser_str) (AddSelectionBox label fty opts names) k = 
     k (FR (S len) (fty :: tys) 
-      (makeSelectBox ("inp" ++ (show len)) fty opts names)) ()
+      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeSelectBox ("inp" ++ (show len)) fty opts names) ++ "</td></tr>\n")) ()  
+  handle (FR len tys ser_str) (AddRadioGroup label fty opts names default) k = 
+    k (FR (S len) (fty :: tys) 
+      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeRadioGroup ("inp" ++ (show len)) fty opts names default) ++ "</td></tr>\n" )) ()
     -- <input type="text" name="inpx" value="val">
 
 
@@ -98,15 +117,14 @@ getEffects (_, effs, _) = interpWebEffects effs
 
 evalFn : (mkHTy : MkHandlerFnTy) -> 
          (counter : Int) -> -- TODO: ftys would be far better as a Vect over some finite set indexed over n
-         (arg_num : Int) ->
          (args : List (String, String)) ->
          (fn : mkHandlerFn mkHTy) ->
          (InitialisedCGI TaskRunning) ->
-         Maybe (mkFinalHandlerType mkHTy, PopFn)
-evalFn (Prelude.List.Nil, effs, ret) counter argnum args fn cgi = Just (fn, 
-       (PF effs ret (interpWebEffects effs) (getWebEnv' effs cgi) fn))-- ?mv -- Just (fn, )
-evalFn ((fty :: ftys), effs, ret) counter argnum args fn cgi = let arg = getAs fty counter args in
-                                                                   evalFn (ftys, effs, ret) (counter + 1) argnum args (fn arg) cgi
+         (mkFinalHandlerType mkHTy, PopFn)
+evalFn (Prelude.List.Nil, effs, ret) counter args fn cgi = (fn, 
+         (PF effs ret (interpWebEffects effs) (getWebEnv' effs cgi) fn))-- ?mv -- Just (fn, )
+evalFn ((fty :: ftys), effs, ret) counter args fn cgi = let arg = getAs fty counter args in
+                                                                   evalFn (ftys, effs, ret) (counter + 1) args (fn arg) cgi
 
 {- Parser functions to grab arguments from a form -}
 strFty : List (String, FormTy)
@@ -171,9 +189,9 @@ getHandler : List (String, String) ->
 getHandler vars handler_name handler_type handlers cgi = do 
                               (RH rh_type rh_fn) <- lookup handler_name handlers
                               rh_fn' <- checkFunctions rh_type handler_type rh_fn
-                              let f_rh = (RH handler_type rh_fn')
-                              let (tys, effs, ret) = handler_type
-                              evalFn handler_type 0 0 vars rh_fn' cgi
+                              let f_rh = (RH handler_type rh_fn') 
+                              let (tys, effs, ret) = handler_type 
+                              Just $ evalFn handler_type 0 vars rh_fn' cgi
 
 getWebEffects : MkHandlerFnTy -> List WebEffect
 getWebEffects (_, effs, _) = effs
@@ -182,13 +200,6 @@ inspectFinalEnv : (effs : List EFFECT) -> Env IO effs -> (InitialisedCGI TaskRun
 inspectFinalEnv [] _ def = def
 inspectFinalEnv ((CGI (InitialisedCGI TaskRunning)) :: effs) ((ICgi st) :: vals) def = (ICgi st)
 inspectFinalEnv (_ :: effs) (_ :: vals) def = inspectFinalEnv effs vals def
-
-{-
-inspectCGIEnv : CGIProg effs a -> Env IO effs -> (InitialisedCGI TaskRunning) -> (InitialisedCGI TaskRunning)
-inspectCGIEnv fn [] def = def
-inspectCGIEnv fn ((ICgi st) :: xs) _ = (ICgi st)
-inspectCGIEnv fn (_ :: xs) def = inspectCGIEnv fn xs def
--}
 
 --Eff IO 
 addOutput : String -> CGIInfo -> CGIInfo
@@ -213,7 +224,7 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
 
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
 mkForm : String -> String -> UserForm -> SerialisedForm
-mkForm name action frm = runPure [FR O [] ("<form name=\"" ++ name ++ 
+mkForm name action frm = runPure [FR O [] ("<table><form name=\"" ++ name ++ 
                          "\" action=\"" ++ action ++ "\" method=\"post\">\n")] frm
 
 
@@ -394,7 +405,7 @@ instance Handler Cgi IO where
   -- TODO: allow GET vars
   handle (ICgi st) (HandleForm handlers) k = do let post_vars = POST st
                                                 (cgi', res) <- executeHandler post_vars handlers (ICgi st)
-                                                -- *really* need to update CGI state, and allow return vals
+                                                -- TODO (if poss): allow return vals
                                                 k cgi' res
 
 -- Internal mechanism to run the user-specified action

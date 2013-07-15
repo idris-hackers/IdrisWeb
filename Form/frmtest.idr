@@ -4,7 +4,7 @@ import SQLite
 import CgiTypes
 
 -- We could also have SQLITE, or CGI here perhaps
-sampleHandler : Maybe String -> Maybe Int -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)] FormBool
+sampleHandler : Maybe String -> Maybe Int -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)] Bool 
 sampleHandler (Just name) (Just age) (Just num) = ((output ("Your name is " ++ name 
               ++ " and you are " ++ (show age) ++ " years old. You selected: " ++ (show num))) >>= (\_ pure True))
 sampleHandler _ _ _ = output "There was an error processing input data." >>= (\_ => pure False)
