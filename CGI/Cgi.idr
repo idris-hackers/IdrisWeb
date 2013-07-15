@@ -13,16 +13,22 @@ import SQLite
 import Session
 import Debug.Trace
 %access public -- for now
-
+-- %default total
 -- Bit of a hack for now, until I can get it so that the user doesn't
 -- have to type this
 initCGIState : (InitialisedCGI TaskRunning)
 initCGIState = ICgi (CGIInf [] [] [] "" "" "this shouldn't happen")
 
+
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String
 showFormVal FormString s = s
 showFormVal FormInt i = show i
-
+showFormVal FormBool b = show b
+showFormVal FormFloat f = show f
+-- FIXME: extra comma...
+showFormVal (FormList t) vs = "[" ++ (foldr (\v, str => (showFormVal t v) ++ "," ++ str) "" vs) ++ "]"
+--  where showListElem : (fty' : FormTy) -> interpFormTy fty' -> String
+  --      showListElem ft v = 
 
 serialiseSubmit : String -> 
                   Vect FormTy n -> 
@@ -57,11 +63,23 @@ makeRadioGroup name fty (val :: vals) (val_name :: val_names) k =  "<input type=
                                                                    (if k == 0 then "\" checked>" else "\">") ++ 
                                                                    val_name ++ "<br />" ++ 
                                                                    makeRadioGroup name fty vals val_names (k - 1)
+                                                                   
+makeCheckBoxes : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> (Vect Bool n) -> String
+makeCheckBoxes _ _ [] [] _ = ""
+makeCheckBoxes name fty (val :: vals) (val_name :: val_names) (is_checked :: checklist) =  
+                                                                   "<input type=\"checkbox\" name=\"" ++ 
+                                                                   name ++ 
+                                                                   "\" value=\"" ++ 
+                                                                   (showFormVal fty val) ++ 
+                                                                   (if is_checked then "\" checked>" else "\">") ++ 
+                                                                   val_name ++ "<br />" ++ 
+                                                                   makeCheckBoxes name fty vals val_names checklist
  
-
 getDefValStr : (fty : FormTy) -> Maybe (interpFormTy fty) -> String
 getDefValStr ty (Just val) = "value=\"" ++ (showFormVal ty val) ++ "\" "
 getDefValStr ty Nothing = ""
+
+
 
 instance Handler Form m where
   handle (FR len tys ser_str) (Submit fn name effs t) k = 
@@ -75,6 +93,9 @@ instance Handler Form m where
   handle (FR len tys ser_str) (AddRadioGroup label fty opts names default) k = 
     k (FR (S len) (fty :: tys) 
       (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeRadioGroup ("inp" ++ (show len)) fty opts names default) ++ "</td></tr>\n" )) ()
+  handle (FR len tys ser_str) (AddCheckBoxes label fty opts names checked) k = 
+    k (FR (S len) ((FormList fty) :: tys) 
+      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeCheckBoxes ("inp" ++ (show len)) fty opts names checked) ++ "</td></tr>\n" )) ()
     -- <input type="text" name="inpx" value="val">
 
 
@@ -82,6 +103,7 @@ instance Handler Form m where
 {- Form handling stuff -}
 -- Gets the serialised value as the given type, if it's possible
 --total
+%assert_total
 parseSerialisedValue : (ty : FormTy) -> String -> Maybe (interpFormTy ty)
 parseSerialisedValue FormString val = Just val
 parseSerialisedValue FormInt val = case parse int val of
@@ -92,8 +114,11 @@ parseSerialisedValue FormBool val = case parse bool val of
                                          Right (b, _) => Just b
 -- FIXME: Placeholder for now, todo: improve parser
 parseSerialisedValue FormFloat val = Just 0.0
+parseSerialisedValue (FormList x) val = Nothing -- My head's aching, recursion unsupported now!
 
 getAs : (ty : FormTy) -> Int -> List (String, String) -> Maybe (interpFormTy ty)
+getAs (FormList ty) n args = do let vals = filter (\(argname, _) => argname == ("inp" ++ (show n))) args
+                                Just $ catMaybes $ map (\(_, x) => parseSerialisedValue ty x) vals
 getAs ty n args = do val <- lookup ("inp" ++ (show n)) args
                      parseSerialisedValue ty val
 
@@ -133,12 +158,28 @@ strFty = [("str", FormString), ("int", FormInt), ("bool", FormBool), ("float", F
 strEff : List (String, WebEffect)
 strEff = [("cgi", CgiEffect), ("sqlite", SqliteEffect)]
 
+
+
 arg : Parser FormTy
 arg = do a_str <- strToken
          char '-'
          case lookup a_str strFty of
               Just fty => pure fty
               Nothing  => failure $ "Attempted to deserialise nonexistent function type " ++ a_str
+
+ty_list : Parser FormTy
+ty_list = nested_list ||| arg
+ where nested_list : Parser FormTy
+       nested_list = do string "list_"
+                        xs <- ty_list
+                        pure (FormList xs)
+
+{-
+ty_list : Parser FormTy
+ty_list = do string "list_"
+             a <- arg
+             pure (FormList a)
+-}
 
 webEff : Parser WebEffect
 webEff = do e_str <- strToken
@@ -147,10 +188,12 @@ webEff = do e_str <- strToken
                  Just w_eff => pure w_eff
                  Nothing => failure $ "Attempted to deserialise nonexistent web effect " ++ e_str
 
+
+-- FIXME: This is using an old version of SimpleParser, since the new one has a strange codegen bug with <|> (or one of the other edits, but I think <|>)
 parseFormFn' : Parser (String, MkHandlerFnTy)
 parseFormFn' = do name <- strToken
                   char '.'
-                  args <- many arg
+                  args <- many (arg ||| ty_list)
                   char '.' -- List delimiter
                   effs <- many webEff
                   char '.'
@@ -173,12 +216,6 @@ checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
   checkFunctions frm_fn_ty frm_fn_ty reg_fn | Yes refl = Just reg_fn
   checkFunctions reg_fn_ty frm_fn_ty reg_fn | No _ = Nothing
                                           
-
-getReturnType : MkHandlerFnTy -> FormTy
-getReturnType (_, _, ret) = ret
-
-
---getHandlerFnTy : List (String, String) -> List (String, RegHandler) -> Maybe 
 -- Takes in a list of form POST / GET vars, a list of available handlers, and returns the appropriate handler
 getHandler : List (String, String) -> 
              (handler_name : String) -> 
@@ -436,5 +473,6 @@ runCGI init_env act = do result <- run [()] (runCGI' init_env act)
 getWebEnv' [] _ = []
 getWebEnv' (CgiEffect :: xs) cgi = (cgi) :: getWebEnv' xs cgi
 getWebEnv' (SqliteEffect :: xs) cgi = (()) :: getWebEnv' xs cgi
+getWebEnv' (SessionEffect :: xs) cgi = (InvalidSession) :: getWebEnv' xs cgi
 
 

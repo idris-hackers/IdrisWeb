@@ -106,6 +106,7 @@ data FormTy = FormString
             | FormInt
             | FormBool
             | FormFloat
+            | FormList FormTy 
 
 total
 interpFormTy : FormTy -> Type
@@ -113,12 +114,14 @@ interpFormTy FormString = String
 interpFormTy FormInt = Int
 interpFormTy FormBool = Bool
 interpFormTy FormFloat = Float
+interpFormTy (FormList a) = List (interpFormTy a)
 
 instance Eq FormTy where
   (==) FormString FormString = True
   (==) FormInt FormInt = True
   (==) FormBool FormBool = True
   (==) FormFloat FormFloat = True
+  (==) (FormList a) (FormList b) = (a == b) 
   (==) _ _ = False
 
 instance Show FormTy where
@@ -126,7 +129,7 @@ instance Show FormTy where
   show FormInt = "int"
   show FormBool = "bool"
   show FormFloat = "float"
-
+  show (FormList a) = "list_" ++ (show a)
 
 
 formstringNotFormInt : FormString = FormInt -> _|_
@@ -135,31 +138,52 @@ formstringNotFormBool : FormString = FormBool -> _|_
 formstringNotFormBool refl impossible
 formstringNotFormFloat : FormString = FormFloat -> _|_
 formstringNotFormFloat refl impossible
+formstringNotFormList : FormString = (FormList a) -> _|_
+formstringNotFormList refl impossible
 formintNotFormBool : FormInt = FormBool -> _|_
 formintNotFormBool refl impossible
 formintNotFormFloat : FormInt = FormFloat -> _|_
 formintNotFormFloat refl impossible
+formintNotFormList : FormInt = (FormList a) -> _|_
+formintNotFormList refl impossible
 formboolNotFormFloat : FormBool = FormFloat -> _|_
 formboolNotFormFloat refl impossible
+formboolNotFormList : FormBool = (FormList a) -> _|_
+formboolNotFormList refl impossible
+formfloatNotFormList : FormFloat = (FormList a) -> _|_
+formfloatNotFormList refl impossible
+
+lemma_a_not_b : {a : FormTy} -> {b : FormTy} -> ((a = b) -> _|_) -> ((FormList a = FormList b) -> _|_) 
+lemma_a_not_b refl impossible
 
 instance DecEq FormTy where
   decEq FormString FormString = Yes refl
   decEq FormString FormInt = No formstringNotFormInt
   decEq FormString FormBool = No formstringNotFormBool
   decEq FormString FormFloat = No formstringNotFormFloat
+  decEq FormString (FormList a) = No formstringNotFormList
   decEq FormInt FormString = No (negEqSym formstringNotFormInt)
   decEq FormInt FormInt = Yes refl
   decEq FormInt FormBool = No formintNotFormBool
   decEq FormInt FormFloat = No formintNotFormFloat
+  decEq FormInt (FormList a) = No formintNotFormList
   decEq FormBool FormString = No (negEqSym formstringNotFormBool)
   decEq FormBool FormInt = No (negEqSym formintNotFormBool)
   decEq FormBool FormBool = Yes refl
   decEq FormBool FormFloat = No formboolNotFormFloat
+  decEq FormBool (FormList a) = No formboolNotFormList
   decEq FormFloat FormString = No (negEqSym formstringNotFormFloat)
   decEq FormFloat FormInt = No (negEqSym formintNotFormFloat)
   decEq FormFloat FormBool = No (negEqSym formboolNotFormFloat)
   decEq FormFloat FormFloat = Yes refl
-
+  decEq FormFloat (FormList a) = No formfloatNotFormList
+  decEq (FormList a) FormString = No (negEqSym formstringNotFormList)
+  decEq (FormList a) FormInt = No (negEqSym formintNotFormList)
+  decEq (FormList a) FormBool = No (negEqSym formboolNotFormList)
+  decEq (FormList a) FormFloat = No (negEqSym formfloatNotFormList)
+  decEq (FormList a) (FormList b) with (decEq a b) 
+    decEq (FormList a) (FormList a) | Yes refl = Yes refl
+    decEq (FormList a) (FormList b) | No p = No (lemma_a_not_b p)
 
 MkHandlerFnTy : Type
 MkHandlerFnTy = (List FormTy, List WebEffect, FormTy)
@@ -206,6 +230,13 @@ using (G : Vect FormTy n)
                     (names : Vect String m) ->
                     (default : Int) ->
                     Form (FormRes G) (FormRes (fty :: G)) ()
+    
+    AddCheckBoxes : (label : String) ->
+                    (fty : FormTy) ->
+                    (vals : Vect (interpFormTy fty) m) ->
+                    (names : Vect String m) ->
+                    (checked_boxes : Vect Bool m) ->
+                    Form (FormRes G) (FormRes ((FormList fty) :: G)) ()
 
     Submit : interpCheckedFnTy G effs t -> 
              String -> 
@@ -236,6 +267,14 @@ using (G : Vect FormTy n)
                   (default : Int) ->
                   EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
   addRadioGroup label ty vals names default = (AddRadioGroup label ty vals names default)
+
+  addCheckBoxes : (label : String) ->
+                  (fty : FormTy) ->
+                  (vals : Vect (interpFormTy fty) j) ->
+                  (names : Vect String j) ->
+                  (checked_boxes : Vect Bool j) ->
+                  EffM m [FORM (FormRes G)] [FORM (FormRes ((FormList fty) :: G))] ()
+  addCheckBoxes label ty vals names checked = (AddCheckBoxes label ty vals names checked) 
 
   addSubmit : (interpCheckedFnTy G effs t) -> 
               String -> 
