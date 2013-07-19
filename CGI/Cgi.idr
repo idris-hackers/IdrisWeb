@@ -7,7 +7,8 @@ module IdrisWeb.Effect.Cgi
 import Effects
 import CgiUtils
 import CgiTypes
-import SimpleParser
+--import SimpleParser
+import Parser
 import Decidable.Equality
 import SQLite
 import Session
