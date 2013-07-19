@@ -175,8 +175,6 @@ storeSessionRow s_id (key, val, ty) = do
     Effects.pure $ Left err
   
 storeSessionData : SessionID -> SerialisedSession -> Eff IO [SQLITE ()] (Either String ())
--- Possible bug: this isn't playing nice. It should be, but it isn't.
---storeSessionData s_id ss = (map (\sd => storeSessionRow s_id sd) ss) --traverse (\sd => storeSessionRow s_id sd) ss
 storeSessionData s_id [] = Effects.pure $ Right ()
 storeSessionData s_id (sr :: srs) = do res <- storeSessionRow s_id sr
                                        case res of
