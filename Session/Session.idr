@@ -12,7 +12,7 @@
 module IdrisWeb.Session.Session
 import SQLite
 import Effects
-import SimpleParser
+import Parser
 import RandC
 %access public
 

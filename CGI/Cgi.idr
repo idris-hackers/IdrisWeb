@@ -7,7 +7,8 @@ module IdrisWeb.Effect.Cgi
 import Effects
 import CgiUtils
 import CgiTypes
-import SimpleParser
+--import SimpleParser
+import Parser
 import Decidable.Equality
 import SQLite
 import Session
@@ -156,7 +157,7 @@ strFty : List (String, FormTy)
 strFty = [("str", FormString), ("int", FormInt), ("bool", FormBool), ("float", FormFloat)]
 
 strEff : List (String, WebEffect)
-strEff = [("cgi", CgiEffect), ("sqlite", SqliteEffect)]
+strEff = [("cgi", CgiEffect), ("sqlite", SqliteEffect), ("session", SessionEffect)]
 
 
 
