@@ -157,7 +157,7 @@ strFty : List (String, FormTy)
 strFty = [("str", FormString), ("int", FormInt), ("bool", FormBool), ("float", FormFloat)]
 
 strEff : List (String, WebEffect)
-strEff = [("cgi", CgiEffect), ("sqlite", SqliteEffect)]
+strEff = [("cgi", CgiEffect), ("sqlite", SqliteEffect), ("session", SessionEffect)]
 
 
 
