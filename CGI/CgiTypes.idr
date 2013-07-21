@@ -218,6 +218,10 @@ using (G : Vect FormTy n)
                  (Maybe (interpFormTy fty)) -> 
                  Form (FormRes G) (FormRes (fty :: G)) () 
 
+    AddHidden  : (fty : FormTy) -> 
+                 (interpFormTy fty) -> 
+                 Form (FormRes G) (FormRes (fty :: G)) () 
+
     AddSelectionBox : (label : String) ->
                       (fty : FormTy) ->
                       (vals : Vect (interpFormTy fty) m) ->
@@ -252,6 +256,11 @@ using (G : Vect FormTy n)
                (Maybe (interpFormTy fty)) ->  -- Default data value (optional)
                EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
   addTextBox label ty val = (AddTextBox label ty val)
+
+  addHidden : (fty : FormTy) ->
+              (interpFormTy fty) -> -- Default value
+              EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+  addHidden ty val = (AddHidden ty val)
 
   addSelectionBox : String ->
                     (fty : FormTy) ->

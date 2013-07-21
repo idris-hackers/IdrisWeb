@@ -24,7 +24,7 @@ getEnv' x = do
       n   <- nullPtr ptr
       if n then pure Nothing
       -- maybe there is a way to marshal the 'ptr' to a string?
-           else fmap Just (getEnv x)
+           else map Just (getEnv x)
 
 -- Returns either the environment variable, or the empty string if it does not exist
 abstract

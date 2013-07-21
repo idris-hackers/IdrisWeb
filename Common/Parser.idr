@@ -29,7 +29,7 @@ instance Functor Parser where
     -- fmap : (a -> b) -> f a -> f b
     -- fmap : (a -> b) -> Parser a -> Parser b
     -- Given a function (a -> b), and a parser a, make a parser b
-    fmap f p = P (\inp => case parse p inp of
+    map f p = P (\inp => case parse p inp of
                                   (Left err) => Left err
                                   -- Apply f to the v that we got from parsing
                                   (Right (v, rest)) => Right ((f v), rest))
@@ -184,7 +184,7 @@ symbol                        : String -> Parser String
 symbol xs                     =  token (string xs)
 
 strToken : Parser String
-strToken = fmap pack (token (many1 alphanum))
+strToken = map pack (token (many1 alphanum))
 
 --apply                           : Parser a -> String -> List (a,String)
 --apply p                     = parse (space >>= (\_ => p))

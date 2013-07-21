@@ -17,26 +17,83 @@ htmlPreamble = "<html><head><title>IdrisWeb Message Board</title></head><body>"
 htmlPostamble : String
 htmlPostamble = "</body></html>"
 
+notLoggedIn : EffM IO [CGI (InitialisedCGI TaskRunning), 
+                       SESSION (SessionRes InitialisedSession), 
+                       SQLITE ()] 
+                      [CGI (InitialisedCGI TaskRunning), 
+                       SESSION (SessionRes UninitialisedSession), 
+                       SQLITE ()] () 
+notLoggedIn = do output htmlPreamble
+                 output "<h1>Error</h1><br />You must be logged in to do that!"
+                 output htmlPostamble 
 ----------- 
 -- Post Creation
 -----------
-handlePost : Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
+postInsert : Int -> Int -> String -> Eff IO [SQLITE ()] Bool
+postInsert uid thread_id content = do
+  open_db <- openDB DB_NAME
+  if open_db then do
+    let sql = "INSERT INTO `Posts` (`UserID`, `ThreadID`, `Content`) VALUES (?, ?, ?)"
+    stmt_res <- prepareStatement sql
+    if stmt_res then do
+      startBind
+      bindInt 1 uid
+      bindInt 2 thread_id
+      bindText 3 content
+      bind_res <- finishBind
+      if bind_res then do
+        beginExecution
+        nextRow
+        finaliseStatement
+        closeDB
+      else pure False
+    else pure False
+  else pure False
+
+addPostToDB : Int -> String -> SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning),
+                                                       SESSION (SessionRes InitialisedSession),
+                                                       SQLITE ()]
+                                                      [CGI (InitialisedCGI TaskRunning),
+                                                       SESSION (SessionRes UninitialisedSession),
+                                                       SQLITE ()] ()
+addPostToDB thread_id content sd = do
+-- TODO: would be nice to abstract this out
+  case lookup "user_id" sd of
+    Just (SInt uid) => do insert_res <- postInsert uid thread_id content
+                          if insert_res then do
+                            -- TODO: redirection would be nice
+                            output "Post successful"
+                            pure ()
+                          else
+                            output "There was an error adding the post to the database."
+                            pure ()
+    Nothing => do notLoggedIn
+                  pure ()
+                         
+
+
+handlePost : Maybe Int -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
                                                             SESSION (SessionRes UninitialisedSession), 
                                                             SQLITE ()
-                                         ] Bool
-handlePost (Just content) = do ...
-handlePost _ = do ...
+                                                      ] Bool
+handlePost (Just thread_id) (Just content) = do withSession (addPostToDB thread_id content) notLoggedIn
+                                                pure True
+handlePost _ _ = do output htmlPreamble
+                    output "<h1>Error</h1><br />There was an error processing your post."
+                    output htmlPostamble
 
-newPostForm : UserForm
-newPostForm = do
+newPostForm : Int -> UserForm
+newPostForm thread_id = do
 -- todo: addHidden operation
+  addHidden FormInt thread_id
   addTextBox "Post Content" FormString Nothing
   addSubmit handlePost "handlePost" [CGIEffect, SessionEffect, SQLiteEffect] FormBool
 
 
-showNewPostForm : CGIProg [SESSION (SessionRes InitialisedSession), SQLITE ()] ()
-showNewPostForm = do output "<h2>Create new post</h2>"
-                     addForm newPostForm
+showNewPostForm : Int -> CGIProg [SESSION (SessionRes InitialisedSession), SQLITE ()] ()
+showNewPostForm thread_id = do 
+  output "<h2>Create new post</h2>"
+  addForm (newPostForm thread_id)
 ----------- 
 -- Thread Creation
 -----------
@@ -46,7 +103,9 @@ handleNewThread : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedC
                                                                SQLITE ()
                                                               ] Bool
 handleNewThread (Just title) (Just content) = do ...
-handleNewThread _ _ = do ...
+handleNewThread _ = do output htmlPreamble
+                       output "<h1>Error</h1><br />There was an error posting your thread."
+                       output htmlPostamble
 
 
 newThreadForm : UserForm
@@ -71,7 +130,10 @@ handleRegisterForm : Maybe String -> Maybe String -> FormHandler [CGI (Initialis
                                                                   SQLITE ()
                                                                  ] Bool
 handleRegisterForm (Just name) (Just pwd) = do ...
-handleRegisterForm _ _ = do ...
+handleRegisterForm _ _ = do output htmlPreamble
+                            output "Error processing data."
+                            output htmlPostamble
+                            pure False
 
 registerForm : UserForm
 registerForm = do
@@ -83,8 +145,7 @@ showRegisterForm : CGIProg [SESSION (SessionRes UninitialisedSession), SQLITE ()
 showRegisterForm = do output htmlPreamble
                       output "<h1>Create a new account</h1>"
                       addForm registerForm
-                      output "</html>"
-
+                      output htmlPostamble
 
 ----------- 
 -- Login 
