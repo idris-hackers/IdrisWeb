@@ -453,25 +453,23 @@ executeFail = do
   pure "Error executing statement"
 
 
-executeInsert' : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Int) -- (Maybe Int)
+executeInsert' : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE (SQLiteRes ConnectionOpened)] (Either String Int) -- (Maybe Int)
 executeInsert' = do
  id_res <- nextRow 
  case id_res of
    StepComplete => do
      last_insert_id <- getColumnInt 0
      finaliseStatement
-     closeDB
      Effects.pure $ Right last_insert_id
    NoMoreRows => do finaliseStatement
-                    closeDB
                     Effects.pure $ Left "Error getting insert ID! NoMoreRows"
-   StepFail => do executeFail
+   StepFail => do finaliseStatement
                   Effects.pure $ Left "Error getting insert ID! StepFail"
 
 -- Execute an insert statement, get the last inserted row ID
 -- TODO: Create a binding to the SQLITE API function, instead of getting
 --       last row ID by a query
-executeInsert : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Int)
+executeInsert : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE (SQLiteRes ConnectionOpened)] (Either String Int)
 executeInsert = do
   next_row_res <- nextRow
   case next_row_res of
@@ -491,5 +489,3 @@ executeInsert = do
       else do
         stmtFail
         Effects.pure $ Left "Error inserting! StmtFail"
-
-

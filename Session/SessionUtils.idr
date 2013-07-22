@@ -3,6 +3,7 @@ import Session
 import Effects
 
 -- Key for the session id in the cookie
+public
 SESSION_VAR : String
 SESSION_VAR = "session_id"
 
@@ -28,7 +29,7 @@ getOrCreateSession = do
 setSessionCookie : Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionInitialised)] Bool
 setSessionCookie = do s_id <- lift (Drop (Keep (SubNil))) getSessionID
                       case s_id of
-                           Just s_id => do lift (Keep (Drop (SubNil))) (setCookie "session_id" s_id)
+                           Just s_id => do lift (Keep (Drop (SubNil))) (setCookie SESSION_VAR s_id)
                                            pure True
                            Nothing => pure False
 
@@ -73,7 +74,10 @@ withSession is_auth_fn not_auth_fn = do
                            Nothing => do not_auth_fn
                                          pure ()
       -- If there's no session variable, execute the failure function (somehow)
-       Nothing => do -- not_auth_fn
+      -- HACK: this loadSession won't succeed, yet will transfer into the other state so
+      -- that the not_auth_fn can be run. Probably better ways of doing it
+       Nothing => do loadSession ""
+                     not_auth_fn
                      pure ()
 
 
