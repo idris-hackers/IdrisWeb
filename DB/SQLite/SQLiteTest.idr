@@ -5,7 +5,7 @@ import SQLite
 import SQLiteCodes
 
 
-testInsert : String -> Int -> EffM IO [SQLITE ()] [SQLITE ()] (Either String ())
+testInsert : String -> Int -> EffM IO [SQLITE ()] [SQLITE ()] (Either String Int)
 testInsert name age = do 
                 open_db <- openDB "test.db"
                 if open_db then do
@@ -18,13 +18,10 @@ testInsert name age = do
                     bind_res <- finishBind
                     if bind_res then do
                                   beginExecution
-                                  finaliseStatement
-                                  closeDB
-                                  Effects.pure $ Right ()
+                                  executeInsert
                                 else do
                                   err <- bindFail
                                   Effects.pure $ Left err
-                                  
                   else do
                     err <- stmtFail
                     Effects.pure $ Left err
@@ -76,5 +73,5 @@ main =
                                    -}
   do res <- run [()] (testInsert "SimonJF" (fromInteger 21))
      case res of Left err => putStrLn $ "Error inserting: " ++ err
-                 Right () => putStrLn "Operation completed successfully!"
+                 Right i_id => putStrLn $ "Operation completed successfully; insert ID: " ++ (show i_id)
 

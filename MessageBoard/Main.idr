@@ -97,12 +97,43 @@ showNewPostForm thread_id = do
 ----------- 
 -- Thread Creation
 -----------
+threadInsert : Int -> Int -> String -> Eff IO [SQLITE ()] Bool
+threadInsert uid thread_id content = do
+  open_db <- openDB DB_NAME
+  if open_db then do
+    let sql = "INSERT INTO `Posts` (`UserID`, `ThreadID`, `Content`) VALUES (?, ?, ?)"
+    stmt_res <- prepareStatement sql
+    if stmt_res then do
+      startBind
+      bindInt 1 uid
+      bindInt 2 thread_id
+      bindText 3 content
+      bind_res <- finishBind
+      if bind_res then do
+        beginExecution
+        nextRow
+        finaliseStatement
+        closeDB
+      else pure False
+    else pure False
+  else pure False
+
+addNewThread : String -> String -> SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning),
+                                                       SESSION (SessionRes InitialisedSession),
+                                                       SQLITE ()]
+                                                      [CGI (InitialisedCGI TaskRunning),
+                                                       SESSION (SessionRes UninitialisedSession),
+                                                       SQLITE ()] ()
+addNewThread title content sd = do
+  
+
 -- Create a new thread, given the title and content
 handleNewThread : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
                                                                SESSION (SessionRes UninitialisedSession), 
                                                                SQLITE ()
                                                               ] Bool
-handleNewThread (Just title) (Just content) = do ...
+handleNewThread (Just title) (Just content) = do withSession (addThreadToDB title content) notLoggedIn
+                                                 pure False
 handleNewThread _ = do output htmlPreamble
                        output "<h1>Error</h1><br />There was an error posting your thread."
                        output htmlPostamble

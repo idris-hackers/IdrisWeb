@@ -419,7 +419,6 @@ getColumnInt pos = (GetColumnInt pos)
 
 nextRow : Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] StepResult
 nextRow = RowStep
-
 resetPos : Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] Bool
 resetPos = Reset
 
@@ -452,3 +451,45 @@ executeFail = do
   finaliseStatement
   closeDB
   pure "Error executing statement"
+
+
+executeInsert' : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Int) -- (Maybe Int)
+executeInsert' = do
+ id_res <- nextRow 
+ case id_res of
+   StepComplete => do
+     last_insert_id <- getColumnInt 0
+     finaliseStatement
+     closeDB
+     Effects.pure $ Right last_insert_id
+   NoMoreRows => do finaliseStatement
+                    closeDB
+                    Effects.pure $ Left "Error getting insert ID! NoMoreRows"
+   StepFail => do executeFail
+                  Effects.pure $ Left "Error getting insert ID! StepFail"
+
+-- Execute an insert statement, get the last inserted row ID
+-- TODO: Create a binding to the SQLITE API function, instead of getting
+--       last row ID by a query
+executeInsert : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Int)
+executeInsert = do
+  next_row_res <- nextRow
+  case next_row_res of
+-- Error with executing insert statement
+    StepFail => do
+      executeFail
+      Effects.pure $ Left "Error inserting! next_row_res executeFail"
+    _ => do
+      finaliseStatement
+      let insert_id_sql = "SELECT last_insert_rowid();"
+      sql_prep_res <- prepareStatement insert_id_sql
+      if sql_prep_res then do
+        startBind
+        finishBind
+        beginExecution 
+        executeInsert'
+      else do
+        stmtFail
+        Effects.pure $ Left "Error inserting! StmtFail"
+
+
