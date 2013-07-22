@@ -1,6 +1,7 @@
 import CgiTypes
 import Session
 import Effects
+%access public
 
 -- Key for the session id in the cookie
 public

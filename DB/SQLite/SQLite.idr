@@ -475,7 +475,7 @@ executeInsert = do
   case next_row_res of
 -- Error with executing insert statement
     StepFail => do
-      executeFail
+      finaliseStatement
       Effects.pure $ Left "Error inserting! next_row_res executeFail"
     _ => do
       finaliseStatement
@@ -487,5 +487,8 @@ executeInsert = do
         beginExecution 
         executeInsert'
       else do
-        stmtFail
+        startBind
+        finishBind
+        beginExecution
+        finaliseStatement
         Effects.pure $ Left "Error inserting! StmtFail"

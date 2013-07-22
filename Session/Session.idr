@@ -20,6 +20,7 @@ import RandC
 SessionID : Type
 SessionID = String
 
+private
 DB_NAME : String
 DB_NAME = "/tmp/sessions.db"
 
