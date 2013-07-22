@@ -46,6 +46,7 @@ postInsert uid thread_id content = do
         nextRow
         finaliseStatement
         closeDB
+        pure True
       else pure False
     else pure False
   else pure False
@@ -94,11 +95,12 @@ showNewPostForm : Int -> CGIProg [SESSION (SessionRes InitialisedSession), SQLIT
 showNewPostForm thread_id = do 
   output "<h2>Create new post</h2>"
   addForm (newPostForm thread_id)
+
 ----------- 
 -- Thread Creation
 -----------
-threadInsert : Int -> Int -> String -> Eff IO [SQLITE ()] Bool
-threadInsert uid thread_id content = do
+threadInsert : Int -> String -> String -> Eff IO [SQLITE ()] Bool
+threadInsert uid title content = do
   open_db <- openDB DB_NAME
   if open_db then do
     let sql = "INSERT INTO `Posts` (`UserID`, `ThreadID`, `Content`) VALUES (?, ?, ?)"
@@ -110,9 +112,12 @@ threadInsert uid thread_id content = do
       bindText 3 content
       bind_res <- finishBind
       if bind_res then do
-        beginExecution
-        nextRow
-        finaliseStatement
+        thread_insert_res <- executeInsert
+        case thread_insert_res of
+          Left err => pure False
+          -- If the thread inserted correctly, insert the first post
+          -- Ideally, this would be a transaction, but it will do for now.
+          Right thread_id => postInsert uid thread_id content
         closeDB
       else pure False
     else pure False
@@ -124,7 +129,19 @@ addNewThread : String -> String -> SessionData -> EffM IO [CGI (InitialisedCGI T
                                                       [CGI (InitialisedCGI TaskRunning),
                                                        SESSION (SessionRes UninitialisedSession),
                                                        SQLITE ()] ()
-addNewThread title content sd = do
+addNewThread title content sd = do 
+-- TODO: would be nice to abstract this out
+  case lookup "user_id" sd of
+    Just (SInt uid) => do insert_res <- threadInsert uid title content
+                          if insert_res then do
+                            -- TODO: redirection would be nice
+                            output "Thread creation successful"
+                            pure ()
+                          else
+                            output "There was an error adding the thread to the database."
+                            pure ()
+    Nothing => do notLoggedIn
+                  pure ()
   
 
 -- Create a new thread, given the title and content
