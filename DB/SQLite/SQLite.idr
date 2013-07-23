@@ -321,6 +321,10 @@ instance Handler Sqlite IO where
   -- states. Calling this in other states should fail without calling the library.
   handle (ExecutingStmt (ValidConn c) (ValidStmt s) Unstarted) RowStep k = do
     res <- mkForeign (FFun "sqlite3_step_idr" [FPtr] FInt) c
+    -- hacky log
+    file <- openFile "/tmp/rowstep_log.log" Write
+    fwrite file (show res) 
+    closeFile file
     --putStrLn $ "Res: " ++ (show res)
     let step_res = stepResult res
     k (ExecutingStmt (ValidConn c) (ValidStmt s) step_res) step_res

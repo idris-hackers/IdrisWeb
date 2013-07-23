@@ -134,13 +134,12 @@ threadInsert : Int -> String -> String -> Eff IO [SQLITE ()] Bool
 threadInsert uid title content = do
   open_db <- openDB DB_NAME
   if open_db then do
-    let sql = "INSERT INTO `Posts` (`UserID`, `ThreadID`, `Content`) VALUES (?, ?, ?)"
+    let sql = "INSERT INTO `Threads` (`UserID`, `Title`) VALUES (?, ?)"
     stmt_res <- prepareStatement sql
     if stmt_res then do
       startBind
       bindInt 1 uid
       bindText 2 title
-      bindText 3 content
       bind_res <- finishBind
       if bind_res then do
         beginExecution
@@ -202,6 +201,10 @@ showNewThreadForm = do output htmlPreamble
 -- Registration
 -----------
 
+innerInsertCase : (Either String Int) -> Eff IO [SQLITE ()] (Either String ())
+innerInsertCase (Left err) = Effects.pure (Left err)
+innerInsertCase _ = Effects.pure (Right ())
+
 -- UP TO HERE
 insertUser : String -> String -> Eff IO [SQLITE ()] (Either String ())
 insertUser name pwd = do
@@ -218,12 +221,7 @@ insertUser name pwd = do
         beginExecution
         res <- executeInsert
         closeDB
--- HACK: This doesn't do error checking, but needed to do something with case statements
-        Effects.pure $ Right () 
-{-
-        case res of
-          Left err => Effects.pure (Left err)
-          Right _ => Effects.pure (Right ()) -}
+        innerInsertCase res
       else do
         err <- bindFail
         Effects.pure $ Left err 
@@ -284,7 +282,7 @@ handleRegisterForm (Just name) (Just pwd) = do
       if (not user_exists) then do 
         insert_res <- insertUser name pwd
         case insert_res of
-          Left err => do outputWithPreamble "Error inserting new user"
+          Left err => do outputWithPreamble ("Error inserting new user" ++ err)
                          pure False
           Right insert_res => do outputWithPreamble "User created successfully!"
                                  pure True
@@ -419,8 +417,8 @@ collectPostResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (Lis
 collectPostResults = do
   step_result <- nextRow
   case step_result of
-    StepComplete => do name <- getColumnText 1
-                       content <- getColumnText 2
+    StepComplete => do name <- getColumnText 0
+                       content <- getColumnText 1
                        xs <- collectPostResults
                        Effects.pure $ (name, content) :: xs
     NoMoreRows => Effects.pure []
@@ -459,10 +457,10 @@ collectThreadResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (L
 collectThreadResults = do
   step_result <- nextRow
   case step_result of
-    StepComplete => do thread_id <- getColumnInt 1
-                       title <- getColumnText 2
-                       uid <- getColumnInt 3
-                       username <- getColumnText 4
+    StepComplete => do thread_id <- getColumnInt 0
+                       title <- getColumnText 1
+                       uid <- getColumnInt 2
+                       username <- getColumnText 3
                        xs <- collectThreadResults
                        Effects.pure $ (thread_id, title, uid, username) :: xs
     NoMoreRows => Effects.pure []
@@ -520,14 +518,14 @@ printThreads : CGIProg [SQLITE ()] ()
 printThreads = do
   thread_res <- getThreads
   case thread_res of
-    Left err => do lift (Keep (Drop (SubNil))) (output $ "Could not retrieve threads, error: " ++ err)
+    Left err => do lift' (output $ "Could not retrieve threads, error: " ++ err)
                    Effects.pure ()
-    Right threads => do lift (Keep (Drop (SubNil))) (output "<table><th><td>Title</td><td>Author</td>")
+    Right threads => do lift (Keep (Drop (SubNil))) (output "<table><th><td>Title</td><td>Author</td></th>")
                         traverseThreads threads
                         lift (Keep (Drop (SubNil))) (output "</table><br />")
                         output "<a href=\"?action=newthread\">Create a new thread</a><br />"
-                        output "<a href=\"?action=register\">Create a new thread</a><br />"
-                        output "<a href=\"?action=login\">Create a new thread</a><br />"
+                        output "<a href=\"?action=register\">Register</a><br />"
+                        output "<a href=\"?action=login\">Log In</a><br />"
                         Effects.pure ()
 ----------- 
 -- Request handling

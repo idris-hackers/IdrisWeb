@@ -40,7 +40,7 @@ serialiseSubmit name tys effs ret = "<input type=\"hidden\" name=\"handler\" val
                                      serialised_tys ++ "." ++ serialised_effs ++ "." ++ serialised_ret ++ "-\"></input>" ++
                                     "<input type=\"submit\"></input></form>"  
   where serialised_tys = foldr (\ty, str => str ++ (show ty) ++ "-") "" tys
-        serialised_effs = foldr (\eff, str => str ++ (show eff) ++ "-") "" effs
+        serialised_effs = foldr (\eff, str => str ++ (show eff) ++ "-") "" (reverse effs)
         serialised_ret =  (show ret) 
 
 
