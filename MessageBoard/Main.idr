@@ -5,7 +5,7 @@ import SessionUtils
 import SQLite
 
 ThreadID : Type
-ThreadID = Integer
+ThreadID = Int
 
 DB_NAME : String
 DB_NAME = "/tmp/messageboard.db"
@@ -58,13 +58,13 @@ postInsert uid thread_id content = do
         nextRow
         finaliseStatement
         closeDB
-        pure True
+        Effects.pure True
       else do bindFail
-              pure False
+              Effects.pure False
     else do stmtFail
-            pure False
+            Effects.pure False
   else do connFail
-          pure False
+          Effects.pure False
 
 addPostToDB : Int -> String -> SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning),
                                                        SESSION (SessionRes SessionInitialised),
@@ -80,13 +80,13 @@ addPostToDB thread_id content sd = do
                             -- TODO: redirection would be nice
                             outputWithPreamble "Post successful"
                             discardSession
-                            pure ()
+                            Effects.pure ()
                           else do
                             outputWithPreamble "There was an error adding the post to the database."
                             discardSession
-                            pure ()
+                            Effects.pure ()
     Nothing => do notLoggedIn
-                  pure ()
+                  Effects.pure ()
                          
 
 
@@ -107,7 +107,7 @@ newPostForm thread_id = do
   addSubmit handlePost "handlePost" [CgiEffect, SessionEffect, SqliteEffect] FormBool
 
 
-showNewPostForm : Int -> CGIProg [SESSION (SessionRes SessionInitialised), SQLITE ()] ()
+showNewPostForm : Int -> CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showNewPostForm thread_id = do
   output htmlPreamble 
   output "<h2>Create new post</h2>"
@@ -191,7 +191,7 @@ newThreadForm = do
   addSubmit handleNewThread "handleNewThread" [CgiEffect, SessionEffect, SqliteEffect] FormBool
 
 
-showNewThreadForm : CGIProg [SESSION (SessionRes SessionInitialised), SQLITE ()] ()
+showNewThreadForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showNewThreadForm = do output htmlPreamble
                        output "<h1>New Thread</h1>"
                        addForm "newThreadForm" "messageboard" newThreadForm
@@ -235,6 +235,18 @@ insertUser name pwd = do
     Effects.pure $ Left err
 
 -- Fine up until here
+userExists' : StepResult -> EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Bool)
+userExists' next_row_res =
+  case next_row_res of
+    StepComplete => do
+      num_rows <- getColumnInt 0
+      finaliseStatement
+      closeDB
+      Effects.pure $ Right (num_rows > 0)
+    _ => do executeFail
+            Effects.pure $ Left "Error executing row count function"
+
+
 userExists : String -> Eff IO [SQLITE ()] (Either String Bool)
 userExists username = do
   conn <- openDB DB_NAME
@@ -248,14 +260,7 @@ userExists username = do
       if bind_res then do
         beginExecution
         next_row_res <- nextRow
-        case next_row_res of
-          StepComplete => do
-            num_rows <- getColumnInt 0
-            finaliseStatement
-            closeDB
-            Effects.pure $ Right (num_rows > 0)
-          _ => do executeFail
-                  Effects.pure $ Left "Error executing row count function" 
+        userExists' next_row_res -- Temporary bug workaround
       else do
         err <- bindFail
         Effects.pure $ Left err
@@ -271,7 +276,7 @@ handleRegisterForm : Maybe String -> Maybe String -> FormHandler [CGI (Initialis
                                                                   SQLITE ()
                                                                  ] Bool
 handleRegisterForm (Just name) (Just pwd) = do 
-  user_exists_res <- userExists
+  user_exists_res <- userExists name
   case user_exists_res of
     Left err => do outputWithPreamble "Error checking for user existence"
                    pure False
@@ -312,10 +317,26 @@ alreadyLoggedIn : SessionData ->
                            SESSION (SessionRes SessionUninitialised), 
                            SQLITE ()] () 
 alreadyLoggedIn _ = do outputWithPreamble "<h1>Error</h1><br />You appear to already be logged in!"
-                       discardSessionChanges
+                       discardSession
 -- If the credentials match, return an ID
 -- Maybe consolidate the Maybe UserID into the Either, or possibly keep them
 -- distinct to encapsulate the system error vs auth failure
+authUser' : StepResult -> EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String (Maybe UserID))
+authUser' next_row_res = 
+  case next_row_res of
+    StepComplete => do
+      user_id <- getColumnInt 0
+      finaliseStatement
+      closeDB
+      Effects.pure $ Right (Just user_id)
+    NoMoreRows => do
+      finaliseStatement
+      closeDB
+      Effects.pure $ Right Nothing -- No user with the given credentials
+    _ => do executeFail
+            Effects.pure $ Left "Error executing row count function"
+
+
 authUser : String -> String -> Eff IO [SQLITE ()] (Either String (Maybe UserID))
 authUser username password = do
   conn <- openDB DB_NAME
@@ -330,35 +351,24 @@ authUser username password = do
       if bind_res then do
         beginExecution
         next_row_res <- nextRow
-        case next_row_res of
-          StepComplete => do
-            num_rows <- getColumnText 0
-            finaliseStatement
-            closeDB
-            Effects.pure $ Right user_id
-          NoMoreRows => do
-            finaliseStatement
-            closeDB
-            Effects.pure $ Right Nothing -- No user with the given credentials
-          _ => do executeFail
-                  Effects.pure $ Left "Error executing row count function"
+        authUser' next_row_res
       else do
         err <- bindFail
         Effects.pure $ Left err
     else do
-      err <- connFail
+      err <- stmtFail 
       Effects.pure $ Left err
   else do
     err <- connFail
     Effects.pure $ Left err
 
 
-setSession : UserID -> Eff IO [SESSION (SessionRes UnitialisedSession)] Bool
+setSession : UserID -> Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised), SQLITE ()] Bool
 setSession user_id = do
-  create_res <- createSession [(USERID_VAR, SString user_id)]
-  sess_res <- setSessionCookie
-  db_res <- writeSessionToDB
-  pure (create_res && sess_res && db_res)
+  create_res <- lift (Drop (Keep (Drop (SubNil)))) (createSession [(USERID_VAR, SInt user_id)])
+  sess_res <- lift (Keep (Keep (Drop (SubNil)))) setSessionCookie
+  db_res <- lift (Drop (Keep (Drop (SubNil)))) writeSessionToDB
+  pure (sess_res && db_res)
 
 
 handleLoginForm : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning),
@@ -366,21 +376,21 @@ handleLoginForm : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedC
                                                                   SQLITE ()
                                                               ] Bool
 handleLoginForm (Just name) (Just pwd) = do
-  auth_res <- authUser
+  auth_res <- lift (Drop (Drop (Keep (SubNil)))) (authUser name pwd)
   case auth_res of
     Right (Just uid) => do
       set_sess_res <- setSession uid
       if set_sess_res then do
-        output $ "Welcome, " ++ name
+        lift (Keep (Drop (Drop (SubNil)))) (output $ "Welcome, " ++ name)
         pure True
       else do
-        output "Could not set session"
+        lift (Keep (Drop (Drop (SubNil)))) (output "Could not set session")
         pure False
     Right Nothing => do
-      output "Invalid username or password"
+      lift (Keep (Drop (Drop (SubNil)))) (output "Invalid username or password")
       pure False
     Left err => do
-      output "Error: " ++ err
+      lift (Keep (Drop (Drop (SubNil)))) (output $ "Error: " ++ err)
       pure False
 
 
@@ -392,9 +402,9 @@ loginForm = do
 
 showLoginForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showLoginForm = do output htmlPreamble
-                      output "<h1>Log in</h1>"
-                      addForm "loginForm" "messageboard" loginForm
-                      output "</html>"
+                   output "<h1>Log in</h1>"
+                   addForm "loginForm" "messageboard" loginForm
+                   output "</html>"
 
 
 
@@ -412,12 +422,12 @@ collectPostResults = do
     StepComplete => do name <- getColumnText 1
                        content <- getColumnText 2
                        xs <- collectPostResults
-                       pure $ (name, content) :: xs
-    NoMoreRows => pure []
-    StepFail => pure []
+                       Effects.pure $ (name, content) :: xs
+    NoMoreRows => Effects.pure []
+    StepFail => Effects.pure []
 
 -- Gets the posts
-getPosts : Int -> Eff IO [SQLITE ()] (Either String (List String, String))
+getPosts : Int -> Eff IO [SQLITE ()] (Either String (List (String, String)))
 getPosts thread_id = do
   open_db <- openDB DB_NAME
   if open_db then do
@@ -432,16 +442,16 @@ getPosts thread_id = do
         results <- collectPostResults
         finaliseStatement
         closeDB 
-        pure $ Right results
+        Effects.pure $ Right results
       else do
         err <- bindFail
-        pure $ Left err
+        Effects.pure $ Left err
     else do
       err <- stmtFail
-      pure $ Left err
+      Effects.pure $ Left err
   else do
     err <- connFail
-    pure $ Left err
+    Effects.pure $ Left err
 
 
 
@@ -454,9 +464,9 @@ collectThreadResults = do
                        uid <- getColumnInt 3
                        username <- getColumnText 4
                        xs <- collectThreadResults
-                       pure $ (name, uid, username) :: xs
-    NoMoreRows => pure []
-    StepFail => pure []
+                       Effects.pure $ (thread_id, title, uid, username) :: xs
+    NoMoreRows => Effects.pure []
+    StepFail => Effects.pure []
 
 
 -- Returns (Title, Thread starter ID, Thread starter name)
@@ -473,41 +483,52 @@ getThreads = do
       results <- collectThreadResults
       finaliseStatement
       closeDB
-      pure $ Right results
+      Effects.pure $ Right results
     else do
       err <- stmtFail
-      pure $ Left err
+      Effects.pure $ Left err
   else do
     err <- connFail
-    pure $ Left err
+    Effects.pure $ Left err
+
+
+actuallyPrintPostsBecauseTraverseIsBeingAnArse : List (String, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+actuallyPrintPostsBecauseTraverseIsBeingAnArse [] = pure ()
+actuallyPrintPostsBecauseTraverseIsBeingAnArse ((name, content) :: xs) = output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>" 
+
 
 printPosts : ThreadID -> CGIProg [SQLITE ()] ()
 printPosts thread_id = do 
-  post_res <- getPosts thread_id
+  post_res <- lift (Drop (Keep (SubNil))) (getPosts thread_id)
   case post_res of
-    Left err => do output $ "Could not retrieve posts, error: " ++ err                        
-                   pure ()
-    Right posts => do output "<table>"
-                      (traverse (\(name, content) => output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>")
-                       posts)
-                      output "</table>"
-                      pure ()
+    Left err => do lift (Keep (Drop (SubNil))) (output $ "Could not retrieve posts, error: " ++ err)
+                   Effects.pure ()
+    Right posts => do lift (Keep (Drop (SubNil))) (output "<table>")
+                      actuallyPrintPostsBecauseTraverseIsBeingAnArse posts
+                      --(Prelude.Applicative.traverse (\(name, content) => (lift (Keep (Drop (SubNil))) (output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>"))
+                      -- posts))
+                      lift (Keep (Drop (SubNil))) (output "</table>")
+                      Effects.pure ()
+
+traverseThreads : List (Int, String, Int, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+traverseThreads [] = pure ()
+traverseThreads ((thread_id, title, uid, username) :: xs) = 
+  (output $ "<tr><td><a href=\"?action=showthread&thread_id=" ++ 
+    (show thread_id) ++ "\">" ++ title ++ "</a></td><td>" ++ username ++ "</td></tr>")
 
 printThreads : CGIProg [SQLITE ()] ()
 printThreads = do
   thread_res <- getThreads
   case thread_res of
-    Left err => do output $ "Could not retrieve threads, error: " ++ err
-                   pure ()
-    Right threads => do output "<table><th><td>Title</td><td>Author</td>"
-                        (traverse (\(thread_id, title, uid, username) => output $ "<tr><td><a href=\"?action=showthread&thread_id=" ++ 
-                          (show thread_id) ++ "\">" ++ title ++ "</a></td><td>" ++ username ++ "</td></tr>")
-                         posts)
-                        output "</table><br />"
+    Left err => do lift (Keep (Drop (SubNil))) (output $ "Could not retrieve threads, error: " ++ err)
+                   Effects.pure ()
+    Right threads => do lift (Keep (Drop (SubNil))) (output "<table><th><td>Title</td><td>Author</td>")
+                        traverseThreads threads
+                        lift (Keep (Drop (SubNil))) (output "</table><br />")
                         output "<a href=\"?action=newthread\">Create a new thread</a><br />"
                         output "<a href=\"?action=register\">Create a new thread</a><br />"
                         output "<a href=\"?action=login\">Create a new thread</a><br />"
-                        pure ()
+                        Effects.pure ()
 ----------- 
 -- Request handling
 -----------
@@ -526,17 +547,20 @@ handlers = [("handleRegisterForm", RH ([FormString, FormString], [CgiEffect, Ses
             ("handleNewThread", RH ([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect], FormBool) handleNewThread),
             ("handlePost", RH ([FormInt, FormString], [CgiEffect, SessionEffect, SqliteEffect], FormBool) handlePost)]
  
+-- Hacky, probably best to use the parser
+strToInt : String -> Int
+strToInt s = cast s
 
 handleRequest : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 handleRequest = do handler_var <- queryPostVar "handler"
                    -- A better way might be (ifHandlerSet ...)
                    case handler_var of
-                     Just _ => do handleForm handlers
-                                  pure ()
+                     Just _ => do lift (Keep (Drop (Drop (SubNil)))) (handleForm handlers)
+                                  Effects.pure ()
                      Nothing => do
-                       action <- queryGetVar "action"
-                       thread_id <- queryGetVar "thread_id"
-                       handleNonFormRequest
+                       action <- lift (Keep (Drop (Drop (SubNil)))) (queryGetVar "action")
+                       thread_id <- lift (Keep (Drop (Drop (SubNil)))) (queryGetVar "thread_id")
+                       handleNonFormRequest action (map strToInt thread_id)
 
 main : IO ()
 main = do runCGI [initCGIState, InvalidSession, ()] handleRequest
