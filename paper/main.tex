@@ -61,7 +61,7 @@
 \preprintfooter{}   % 'preprint' option specified.
 
 \title{Correct and Secure Web Programming using 
-Dependent Types and Embedded Domain-Specific Languages}
+Embedded Domain-Specific Languages}
 %\subtitle{Using Embedded Domain-Specific Languages to Improve Confidence in Web Applications}
 
 \authorinfo{Simon Fowler \and Edwin Brady}
@@ -133,6 +133,16 @@ Implementing a new effect involves creating a new algebraic data type, of kind \
 Effect : Type
 Effect = (res : Type) -> (res’ : Type) ->
          (t : Type) -> Type
+\end{verbatim}
+
+Operations are made available to users by writing functions with the correct \texttt{EffM} type, which may then be used to invoke the operation from within an effectful program.
+
+\begin{verbatim}
+queryPostVar : 
+ String -> 
+ Eff m [CGI (InitialisedCGI TaskRunning)] 
+   (Maybe String)
+queryPostVar query = (QueryPostVar query)
 \end{verbatim}
 
 Additionally, we define \textit{handlers}, which describe how each operation is interpreted in a given execution context. Finally, \texttt{Effect} instances are promoted to \texttt{EFFECT} instances through the use of the \texttt{MkEff} constructor, which is provided with the initial resource value.
@@ -428,7 +438,7 @@ The \texttt{page} variable is assumed to be an integer, but may instead be modif
 In this section, we present a mechanism by which we introduce a web form DSL for the creation of forms which preserve type information. Once the form has been submitted, retrieved information is passed directly to a developer-specified function for handling, without the need to manually check and deserialise data. 
 
 \subsection{Form Construction}
-Each form element is specified to hold a particular type of data, which is then passed directly as that particular type, assuming that the correct type of data is specified by the user, to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an abstract data type, \texttt{FormTy}.
+Each form element is specified to hold a particular type of data, which is then passed directly as that particular type, assuming that the correct type of data is specified by the user, to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
 \begin{verbatim}
 data FormTy = FormString
             | FormInt
@@ -436,7 +446,7 @@ data FormTy = FormString
             | FormFloat
             | FormList FormTy 
 \end{verbatim}
-In \idris{}, types are first-class, meaning that they may be treated like other terms in computations. We use this to convert between our abstract representation of permitted form types and concrete types:
+In \idris{}, types are first-class, meaning that they may be treated like other terms in computations. We use this to convert between abstract and concrete representations of allowed form types:
 \begin{verbatim}
 interpFormTy : FormTy -> Type
 interpFormTy FormString = String
@@ -448,7 +458,7 @@ interpFormTy (FormList a) = List (interpFormTy a)
 %
 In order to specify a form, we once again make use of the \texttt{Effects} library in order to create a resource-aware EDSL. By recording the type of each form element as it is added in the type of the form, we may statically ensure that the user-supplied handler function is of the correct type to handle the data supplied by the form. If a handler function with with different types is supplied, then this will result in a compile-time type error.
 
-\idris{} allows for implicit arguments to be bound across a block of code through \texttt{using} notation. This allows us to parameterise the resource associated with the form construction EDSL over the types accepted by each individual form element.
+\idris{} allows for implicit arguments to be bound across a block of code through \texttt{using} notation. We may therefore parameterise the EDSL over the types associated with each form element, and the effects required by the handler function.
 
 {\small
 \begin{verbatim}
@@ -483,22 +493,69 @@ UserForm = EffM m [FORM (FormRes [])
 \end{verbatim}
 All forms are required to include a submit button, as mandated by the requirement that the input and output resource contains an empty list of types; this requirement is fulfilled as per the output resource type of the \texttt{AddSubmit} operation. As the creation of a form is a pure function which does not include side effects, we do not restrict the handler to IO as with previously-discussed EDSLs, instead denoting the fact that it may be run in any handler with the implicit variable \texttt{m}.
 
-The \texttt{interpCheckedFnTy} type of a valid handler function is calculated by the \texttt{interpCheckedFnTy} function, given the vector of types expected by form elements, the return type of the handler function, and an abstract representation of effects permitted to be used by a handler function. 
-At this point, it is unfortunately not possible to specify arbitrary effects due to difficulties with serialising initial resource environments. This is, however, not an inherent limitation as the \texttt{Effects} EDSL allows for the introduction of effects within an effectful computation.
-{\small
+Handlers may only be associated with a form if they have argument types corresponding to the types associated with the form elements. Additionally, we wish to name the function in order for it to be serialised, whilst requiring a proof that the specified name is associated with the function. If this were not the case, it would be possible to specify a function which satisfies the type requirement, without guaranteeing that it the serialised data corresponded to that function, thus rendering the check pointless. 
+
+Before associating a handler function with the form, we must firstly specify the effects available to the handler. This is done through the use of the \texttt{useEffects}, which updates the list of effects in the type of the form resource. By doing this, we may subsequently use the effects in calculations at the type level, in particular when calculating the type of the handler function for the form. 
+
 \begin{verbatim}
-interpCheckedFnTy : Vect FormTy n -> 
-                    List EFFECT -> 
-                    Type -> 
-                    Type
-interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
- where interpCheckedFnTy' : Vect FormTy n -> Type
-       interpCheckedFnTy' [] = FormHandler effs t
-       interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) ->
-                                      interpCheckedFnTy' xs
+useEffects : (effs : List WebEffect) ->
+             EffM m [FORM (FormRes G E)] 
+                    [FORM (FormRes G effs)] ()
+useEffects effs = (UseEffects effs)
 \end{verbatim}
-}
-Since the DSL records types by prepending them to the type vector, we must reverse the list before calculating the type. Additionally, we pass all arguments encased in the \texttt{Maybe} type, in order to handle failure should the supplied data fail to parse to the specified type.
+At this point, it is unfortunately not possible to specify arbitrary effects due to difficulties with serialising initial resource environments. This is, however, not an inherent limitation as the \texttt{Effects} library allows for the introduction of effects within an effectful computation.
+%
+We may specify a handler function of type \texttt{FormHandler}:
+\begin{verbatim}
+FormHandler : List EFFECT -> Type
+FormHandler effs = Eff IO effs ()
+\end{verbatim}
+In order to associate a handler with a form, we may call the \texttt{addSubmit} function:
+%
+\begin{verbatim}
+  addSubmit : (f :  mkHandlerFn ((reverse G), E)) ->
+              (fns : HandlerList) ->
+              {default tactics { applyTactic 
+                findFn 100; solve; }
+               prf : FnElem f fns} ->
+              EffM m [FORM (FormRes G E)]
+                     [FORM (FormRes [] [])] 
+                     String
+  addSubmit f handlers {prf} = (Submit f name)
+    where name : String
+          name = getString' f handlers prf          
+\end{verbatim}
+%
+Let us look at each aspect of this function in turn. Firstly, the \texttt{mkHandlerFn} function calculates the required type of the handler function from the list of types associated with the form elements, and the effects we specified with the \texttt{useEffects} function. Note that since we prepend types to the list of \texttt{FormTy}s as opposed to prepending them, we must reverse the list.
+%
+\begin{verbatim}
+MkHandlerFnTy : Type
+MkHandlerFnTy = (List FormTy, List WebEffect)
+
+mkHandlerFn' : List FormTy -> List WebEffect -> Type
+mkHandlerFn' [] effs = FormHandler (interpWebEffects effs) 
+mkHandlerFn' (x :: xs) effs = Maybe (interpFormTy x) -> 
+                              mkHandlerFn' xs effs 
+
+mkHandlerFn : MkHandlerFnTy -> Type 
+mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
+\end{verbatim}
+The \texttt{mkHandlerFn} function takes as its argument a tuple describing the arguments and web effects available to the function. When constructing the function type, we encase all arguments withing \texttt{Maybe} type, in order to handle failure should the supplied data fail to parse to the specified type. We may then extract the information through pattern matching.
+%The type of a valid handler function is calculated by the \texttt{interpCheckedFnTy} function, given the vector of types expected by form elements, the return type of the handler function, and an abstract representation of effects permitted to be used by a handler function. 
+%
+%{\small
+%\begin{verbatim}
+%interpCheckedFnTy : Vect FormTy n -> 
+%                    List EFFECT -> 
+%                    Type -> 
+%                    Type
+%interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
+% where interpCheckedFnTy' : Vect FormTy n -> Type
+%       interpCheckedFnTy' [] = FormHandler effs t
+%       interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) ->
+%                                      interpCheckedFnTy' xs
+%\end{verbatim}
+%}
 
 Finally, we must serialise the argument types, supported effects, and return type of the handler function, in order to allow the form data to be correctly deserialised and ensure that the correct handler function is executed on the server. 
 
@@ -556,3 +613,4 @@ P. Q. Smith, and X. Y. Jones. ...reference text...
 %  ----         ------  ----    ------
 
 %  2013.06.29   TU      0.1--4  comments on permission/copyright notices
+

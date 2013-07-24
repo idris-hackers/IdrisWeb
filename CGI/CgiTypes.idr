@@ -195,15 +195,6 @@ mkHandlerFn' (x :: xs) effs = Maybe (interpFormTy x) -> mkHandlerFn' xs effs
 mkHandlerFn : MkHandlerFnTy -> Type 
 mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
 
-data RegHandler : Type where
-  RH : (ft : MkHandlerFnTy) -> mkHandlerFn ft -> RegHandler
-
-interpCheckedFnTy : Vect FormTy n -> List WebEffect -> Type
-interpCheckedFnTy tys effs = interpCheckedFnTy' (reverse tys)
-  where interpCheckedFnTy' : Vect FormTy n -> Type
-        interpCheckedFnTy' [] = FormHandler (interpWebEffects effs)
-        interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) -> interpCheckedFnTy' xs
-
 public
 HandlerFn : Type
 HandlerFn = (ft ** (mkHandlerFn ft, String))
