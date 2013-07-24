@@ -147,7 +147,7 @@ ident                         =  do x  <- letter
                                     pure (pack(x::xs))
 
 nat                           : Parser Int
-nat                           =  do xs <- many digit
+nat                           =  do xs <- many1 digit
                                     pure (cast (cast xs))
 
 

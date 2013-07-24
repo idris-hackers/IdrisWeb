@@ -20,12 +20,16 @@ sampleHandler (Just name) (Just age) = do (output ("Your name is: " ++ name ++
 sampleHandler _ _ = do output "There was an error processing form data."
                        pure ()
 
+
+handlers : HandlerList
+handlers = [(([FormString, FormInt], [CgiEffect, SqliteEffect]) ** (sampleHandler, "sampleHandler"))]
+
 sampleForm : UserForm --UserForm
 sampleForm = do addTextBox "Name: " FormString (Just "Simon")
                 addTextBox "Age: " FormInt Nothing-- 21
                 -- TODO: ideally, we'd have something like just "addSubmit sampleHandler" or grab it from the list of registered handlers
                 useEffects [CgiEffect, SqliteEffect]
-                addSubmit sampleHandler "sampleHandler" 
+                addSubmit sampleHandler handlers -- sampleHandler "sampleHandler" 
 
 
 cgiAction : CGIProg [] ()
@@ -38,7 +42,8 @@ cgiAction = do output "<h1>Simon's awesome form stuff!</h1>\n"
                --sequence (map (\(name, val) => output $ "Name: " ++ name ++ ", " ++ val ++ "<br />") post_vars)
                case handlervar of
                     -- If at all poss, this needs to be cleaner. Users shouldn't have to type this
-                    Just _ => do res <- handleForm [("sampleHandler", (RH ([FormString, FormInt], [CgiEffect, SqliteEffect]) sampleHandler))]
+                    Just _ => do res <- handleForm handlers
+--[("sampleHandler", (RH ([FormString, FormInt], [CgiEffect, SqliteEffect]) sampleHandler))]
                                  pure ()
                     Nothing => do addForm "sampleForm" "formtest" sampleForm 
                                   pure ()

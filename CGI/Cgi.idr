@@ -32,7 +32,7 @@ showFormVal (FormList t) vs = "[" ++ (foldr (\v, str => (showFormVal t v) ++ ","
   --      showListElem ft v = 
 
 serialiseSubmit : String -> 
-                  Vect FormTy n -> 
+                  List FormTy -> 
                   List WebEffect -> 
                   String
 serialiseSubmit name tys effs = "<input type=\"hidden\" name=\"handler\" value=\"" ++ name ++ "." ++
@@ -141,15 +141,6 @@ getWebEnv' : (effs : List WebEffect) -> (InitialisedCGI TaskRunning) -> Effects.
 -- Def later
 
 
-getEffects : (List FormTy, List WebEffect, FormTy) -> List EFFECT
-getEffects (_, effs, _) = interpWebEffects effs
-
---getWebEnv : (frm_ty : MkHandlerFnTy) -> Effects.Env IO (getEffects frm_ty)
---getWebEnv (_, effs, _) = getWebEnv' effs
-
-
-
-
 evalFn : (mkHTy : MkHandlerFnTy) -> 
          (counter : Int) -> -- TODO: ftys would be far better as a Vect over some finite set indexed over n
          (args : List (String, String)) ->
@@ -158,8 +149,9 @@ evalFn : (mkHTy : MkHandlerFnTy) ->
          (mkFinalHandlerType mkHTy, PopFn)
 evalFn (Prelude.List.Nil, effs) counter args fn cgi = (fn, 
          (PF effs (interpWebEffects effs) (getWebEnv' effs cgi) fn))-- ?mv -- Just (fn, )
-evalFn ((fty :: ftys), effs) counter args fn cgi = let arg = getAs fty counter args in
-                                                                   evalFn (ftys, effs) (counter + 1) args (fn arg) cgi
+evalFn ((fty :: ftys), effs) counter args fn cgi = 
+  let arg = getAs fty counter args in
+    evalFn (ftys, effs) (counter + 1) args (fn arg) cgi
 
 {- Parser functions to grab arguments from a form -}
 strFty : List (String, FormTy)
@@ -224,18 +216,24 @@ checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
   checkFunctions frm_fn_ty frm_fn_ty reg_fn | Yes refl = Just reg_fn
   checkFunctions reg_fn_ty frm_fn_ty reg_fn | No _ = Nothing
                                           
+
+lookupHandler : String -> HandlerList -> Maybe HandlerFn
+lookupHandler _ [] = Nothing
+lookupHandler name ((ft ** (fn, fn_name))::fns) = if name == fn_name then (Just (ft ** (fn, fn_name)))
+                                                              else lookupHandler name fns
+
 -- Takes in a list of form POST / GET vars, a list of available handlers, and returns the appropriate handler
 getHandler : List (String, String) -> 
              (handler_name : String) -> 
              (handler_ty : MkHandlerFnTy) -> 
-             List (String, RegHandler) -> 
+             HandlerList -> 
              (InitialisedCGI TaskRunning) -> 
              Maybe (mkFinalHandlerType handler_ty, PopFn)
 getHandler vars handler_name handler_type handlers cgi = do 
-                              (RH rh_type rh_fn) <- lookup handler_name handlers
-                              rh_fn' <- checkFunctions rh_type handler_type rh_fn
-                              let f_rh = (RH handler_type rh_fn') 
-                              let (tys, effs) = handler_type 
+                              (ft ** (fn, fn_name)) <- lookupHandler handler_name handlers
+                              rh_fn' <- checkFunctions ft handler_type fn
+                              --let f_rh = (RH handler_type rh_fn') 
+                              --let (tys, effs) = handler_type 
                               Just $ evalFn handler_type 0 vars rh_fn' cgi
 
 inspectFinalEnv : (effs : List EFFECT) -> Env IO effs -> (InitialisedCGI TaskRunning) -> (InitialisedCGI TaskRunning)
@@ -246,7 +244,10 @@ inspectFinalEnv (_ :: effs) (_ :: vals) def = inspectFinalEnv effs vals def
 --Eff IO 
 addOutput : String -> CGIInfo -> CGIInfo
 -- TODO: GetEnv on the CGI
-executeHandler : List (String, String) -> List (String, RegHandler) -> (InitialisedCGI TaskRunning) -> IO (InitialisedCGI TaskRunning, Bool)
+executeHandler : List (String, String) -> 
+                 HandlerList -> 
+                 (InitialisedCGI TaskRunning) -> 
+                 IO (InitialisedCGI TaskRunning, Bool)
 executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn of
                                       Just (name, frm_ty) => case getHandler vars name frm_ty handlers cgi of
                                         Just (fn, (PF effs conc_effs env fn')) => do (env', res) <- runEnv env fn'
@@ -370,7 +371,7 @@ addForm : String -> String -> UserForm -> Eff m [CGI (InitialisedCGI TaskRunning
 addForm name action form = (AddForm name action form)
 
 abstract
-handleForm : List (String, RegHandler) -> Eff m [CGI (InitialisedCGI TaskRunning)] Bool
+handleForm : HandlerList -> Eff m [CGI (InitialisedCGI TaskRunning)] Bool
 handleForm handlers = (HandleForm handlers)
 
 -- Handler for CGI in the IO context

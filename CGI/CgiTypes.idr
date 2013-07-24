@@ -198,88 +198,42 @@ mkHandlerFn (tys, effs) = mkHandlerFn' tys effs
 data RegHandler : Type where
   RH : (ft : MkHandlerFnTy) -> mkHandlerFn ft -> RegHandler
 
---------
--- START NEW STUFF
---------
-{-
-interpRH RegHandler -> Type
-interpRH (RH (args, effs) fn) = interpRH' args where
-  interpRH' [] = FormHandler (interpWebEffects effs)
-  interpRH' (x :: xs) = interpFormTy x -> interpRH' xs
-
-
-testFn1 : Int -> String -> String
-testFn1 x y = show x ++ ", " ++ show y
-
-testFn2 : Int -> Int 
-testFn2 x = x * 2
-
-
-test1 : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)]
-test2 (Just name) (Just age) = do
-  output "Your name is " ++ name
-  output $ " and you are " ++ show age ++ " years old!"
-  pure ()
-
-
-test2 : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)]
-test2 (Just name) (Just age) = do
-  output "Your name is " ++ name
-  output $ " and you are " ++ show age ++ " years old!"
-  pure ()
-
-
-RHList : Type
-RHList = List ((ft : MkHandlerFnTy) ** (interp ft, String))
-
-
-fnList : FunList
-fnList = [(FnTy [TyInt, TyString] TyString ** (testFn1, "test1")),
-          (FnTy [TyInt] TyInt ** (testFn2, "test2"))]
-
-
-rhList : RHList
-rhList = [sampleRH1]
-
-
-data FnElem : interpTy t -> FunList -> Type where 
-     Here : {xs : FunList, f : interpTy t} ->
-            FnElem f ((t ** (f, fStr)) :: xs)
-     There : {xs : FunList, f : interpTy t} ->
-             FnElem f xs -> FnElem f (x :: xs)
-
-findFn : Nat -> List (TTName, Binder TT) -> TT -> Tactic -- Nat is maximum search depth
-findFn O ctxt goal = Refine "Here" `Seq` Solve 
-findFn (S n) ctxt goal = GoalType "FnElem" 
-          (Try (Refine "Here" `Seq` Solve)
-               (Refine "There" `Seq` (Solve `Seq` findFn n ctxt goal)))
-
-
-getString' : (f : interpTy t) ->
-             (fs : FunList) -> FnElem f fs -> String
-getString' f ((_ ** (_, n)) :: _) Here = n
-getString' f (_ :: fs) (There p) = getString' f fs p
-
-getString : (f : interpTy t) ->
-            (fs : FunList) -> 
-            {default tactics { applyTactic findFn 100; solve; }
-              prf : FnElem f fs} -> String
-getString f fs {prf} = getString' f fs prf
--}
------
------ END NEW STUFF
------
-
 interpCheckedFnTy : Vect FormTy n -> List WebEffect -> Type
 interpCheckedFnTy tys effs = interpCheckedFnTy' (reverse tys)
   where interpCheckedFnTy' : Vect FormTy n -> Type
         interpCheckedFnTy' [] = FormHandler (interpWebEffects effs)
         interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) -> interpCheckedFnTy' xs
 
+public
+HandlerFn : Type
+HandlerFn = (ft ** (mkHandlerFn ft, String))
 
-using (G : Vect FormTy n, E : List WebEffect)
-  data FormRes : Vect FormTy n -> List WebEffect -> Type where
-    FR : Nat -> Vect FormTy n -> List WebEffect -> String -> FormRes G E
+public
+HandlerList : Type
+HandlerList = List HandlerFn
+
+
+using (G : List FormTy, E : List WebEffect)
+  data FormRes : List FormTy -> List WebEffect -> Type where
+    FR : Nat -> List FormTy -> List WebEffect -> String -> FormRes G E
+
+  data FnElem : mkHandlerFn ((reverse G), E) -> HandlerList -> Type where 
+       FnHere : {xs : HandlerList, f : mkHandlerFn ((reverse G), E)} ->
+              FnElem f ((((reverse G), E) ** (f, fStr)) :: xs)
+       FnThere : {xs : HandlerList, f : mkHandlerFn ((reverse G), E)} ->
+               FnElem f xs -> FnElem f (x :: xs)
+
+  findFn : Nat -> List (TTName, Binder TT) -> TT -> Tactic -- Nat is maximum search depth
+  findFn O ctxt goal = Refine "FnHere" `Seq` Solve 
+  findFn (S n) ctxt goal = GoalType "FnElem" 
+            (Try (Refine "FnHere" `Seq` Solve)
+                 (Refine "FnThere" `Seq` (Solve `Seq` findFn n ctxt goal)))
+
+
+  getString' : (f : mkHandlerFn ((reverse G), E)) ->
+               (fs : HandlerList) -> FnElem f fs -> String
+  getString' f ((_ ** (_, n)) :: _) FnHere = n
+  getString' f (_ :: fs) (FnThere p) = getString' f fs p
 
   
   data Form : Effect where
@@ -315,7 +269,8 @@ using (G : Vect FormTy n, E : List WebEffect)
     UseEffects : (effs : List WebEffect) ->
                  Form (FormRes G E) (FormRes G effs) ()
 
-    Submit : interpCheckedFnTy G E -> 
+    Submit : -- (interpCheckedFnTy G E) -> 
+             (mkHandlerFn ((reverse G), E)) ->
              String -> 
              Form (FormRes G E) (FormRes [] []) String
 
@@ -356,10 +311,27 @@ using (G : Vect FormTy n, E : List WebEffect)
                   EffM m [FORM (FormRes G E)] [FORM (FormRes ((FormList fty) :: G) E)] ()
   addCheckBoxes label ty vals names checked = (AddCheckBoxes label ty vals names checked) 
 
-  addSubmit : (interpCheckedFnTy G E) -> 
-              String -> 
+
+{-
+  getString : (f : mkHandlerFn ((reverse G), E)) ->
+              (fs : HandlerList) -> 
+              {default tactics { applyTactic findFn 100; solve; }
+                prf : FnElem f fs} -> String
+  getString f fs {prf} = getString' f fs prf
+-}
+
+
+-- (ft ** (mkHandlerFn ft, String))
+  addSubmit : --(fn : (interpCheckedFnTy G E)) ->
+              (f :  mkHandlerFn ((reverse G), E)) ->
+              (fns : HandlerList) ->
+              {default tactics { applyTactic findFn 100; solve; }
+                prf : FnElem f fns} ->
+            --  (prf : FnElem fn fns) ->
               EffM m [FORM (FormRes G E)] [FORM (FormRes [] [])] String
-  addSubmit fn name = (Submit fn name)
+  addSubmit f handlers {prf} = (Submit f name)
+    where name : String
+          name = getString' f handlers prf
 
   useEffects : (effs : List WebEffect) ->
                EffM m [FORM (FormRes G E)] [FORM (FormRes G effs)] ()
@@ -441,7 +413,7 @@ data Cgi : Effect where
             Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
   -- Attempts to handle a form, given a list of available handlers
-  HandleForm : List (String, RegHandler) -> 
+  HandleForm : HandlerList -> 
                Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) Bool
 
 
@@ -467,4 +439,28 @@ data PopFn : Type where
        (effs : List EFFECT) -> (env : Effects.Env IO effs) -> 
        Eff IO effs () -> PopFn
 
+
+{-
+test1 : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)]
+test1 (Just name) (Just age) = do
+  --output $ "Your name is " ++ name
+  --output $ " and you are " ++ (show age) ++ " years old!"
+  pure ()
+
+
+test2 : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), SQLITE ()]
+test2 (Just name) (Just name2) = do
+  --output $ "Your name is " ++ name
+  --output $ " and your last name is " ++ name2
+  pure ()
+-}
+{-
+fnList : HandlerList
+fnList = [(([FormString, FormInt], [CgiEffect]) ** (test1, "test1")),
+          (([FormString, FormString], [CgiEffect, SqliteEffect]) ** (test2, "test2"))]
+-}
+
+-----
+----- END NEW STUFF
+-----
 
