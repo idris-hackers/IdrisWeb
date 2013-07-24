@@ -16,16 +16,16 @@ sampleHandler : Maybe String ->
                 Maybe Int -> 
                 Maybe String -> 
                 Maybe (List String) ->
-                FormHandler [CGI (InitialisedCGI TaskRunning)] Bool
+                FormHandler [CGI (InitialisedCGI TaskRunning)]
 sampleHandler (Just name) (Just age) (Just num) (Just p_lang) (Just known_langs) = do 
                                                                    output ("Your name is: " ++ name ++ 
                                                                      ", and you are " ++ (show age) ++ " years old!" ++ 
                                                                      "<br>You selected number: " ++ (show num) ++
                                                                      ", and said your favourite programming language is " ++ p_lang ++
                                                                      ". You said you also knew " ++ (outputCommaList known_langs))
-                                                                   pure True
+                                                                   pure ()
 sampleHandler _ _ _ _ _ = do output "There was an error processing form data."
-                             pure False
+                             pure ()
 
 sampleForm : UserForm --UserForm
 sampleForm = do addTextBox "Name: " FormString (Just "Simon")
@@ -35,7 +35,7 @@ sampleForm = do addTextBox "Name: " FormString (Just "Simon")
                 addRadioGroup "Favourite programming language: " FormString ["java", "haskell", "c"] ["Java", "Haskell", "C"] 2
                 addCheckBoxes "Programming languages you know: " FormString ["java", "haskell", "c"] ["Java", "Haskell", "C"] [False, True, False]
                 -- TODO: ideally, we'd have something like just "addSubmit sampleHandler" or grab it from the list of registered handlers
-                addSubmit sampleHandler "sampleHandler" [CgiEffect] FormBool 
+                addSubmit sampleHandler "sampleHandler" [CgiEffect] 
 
 
 cgiAction : CGIProg [] ()
@@ -48,7 +48,7 @@ cgiAction = do output "<h1>Simon's awesome form stuff!</h1>\n"
                --sequence (map (\(name, val) => output $ "Name: " ++ name ++ ", " ++ val ++ "<br />") post_vars)
                case handlervar of
                     -- If at all poss, this needs to be cleaner. Users shouldn't have to type this
-                    Just _ => do res <- handleForm [("sampleHandler", (RH ([FormString, FormInt, FormInt, FormString, (FormList FormString)], [CgiEffect], FormBool) sampleHandler))]
+                    Just _ => do res <- handleForm [("sampleHandler", (RH ([FormString, FormInt, FormInt, FormString, (FormList FormString)], [CgiEffect]) sampleHandler))]
                                  output (show res)
                                  pure ()
                     Nothing => do addForm "sampleForm" "formtest" sampleForm 

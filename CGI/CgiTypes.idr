@@ -11,8 +11,8 @@ public
 Vars : Type
 Vars = List (String, String)
 
-FormHandler : List EFFECT -> Type -> Type
-FormHandler effs t = EffM IO effs effs t
+FormHandler : List EFFECT -> Type
+FormHandler effs = Eff IO effs ()
 
 -- CGI Concrete effect sig
 public
@@ -186,24 +186,24 @@ instance DecEq FormTy where
     decEq (FormList a) (FormList b) | No p = No (lemma_a_not_b p)
 
 MkHandlerFnTy : Type
-MkHandlerFnTy = (List FormTy, List WebEffect, FormTy)
+MkHandlerFnTy = (List FormTy, List WebEffect)
 
-mkHandlerFn' : List FormTy -> List WebEffect -> FormTy -> Type
-mkHandlerFn' [] effs ty = FormHandler (interpWebEffects effs) (interpFormTy ty)
-mkHandlerFn' (x :: xs) effs ty = Maybe (interpFormTy x) -> mkHandlerFn' xs effs ty
+mkHandlerFn' : List FormTy -> List WebEffect -> Type
+mkHandlerFn' [] effs = FormHandler (interpWebEffects effs) 
+mkHandlerFn' (x :: xs) effs = Maybe (interpFormTy x) -> mkHandlerFn' xs effs 
 
 mkHandlerFn : MkHandlerFnTy -> Type 
-mkHandlerFn (tys, effs, ret) = mkHandlerFn' tys effs ret
+mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
 
 
 data RegHandler : Type where
   RH : (ft : MkHandlerFnTy) -> mkHandlerFn ft -> RegHandler
 
 
-interpCheckedFnTy : Vect FormTy n -> List EFFECT -> Type -> Type
-interpCheckedFnTy tys effs t = interpCheckedFnTy' (reverse tys)
+interpCheckedFnTy : Vect FormTy n -> List EFFECT -> Type
+interpCheckedFnTy tys effs = interpCheckedFnTy' (reverse tys)
   where interpCheckedFnTy' : Vect FormTy n -> Type
-        interpCheckedFnTy' [] = FormHandler effs t
+        interpCheckedFnTy' [] = FormHandler effs
         interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) -> interpCheckedFnTy' xs
 
 
@@ -242,10 +242,9 @@ using (G : Vect FormTy n)
                     (checked_boxes : Vect Bool m) ->
                     Form (FormRes G) (FormRes ((FormList fty) :: G)) ()
 
-    Submit : interpCheckedFnTy G effs t -> 
+    Submit : interpCheckedFnTy G effs -> 
              String -> 
              (effs : List WebEffect) -> 
-             (t : FormTy) -> 
              Form (FormRes G) (FormRes []) String
 
   FORM : Type -> EFFECT
@@ -285,12 +284,11 @@ using (G : Vect FormTy n)
                   EffM m [FORM (FormRes G)] [FORM (FormRes ((FormList fty) :: G))] ()
   addCheckBoxes label ty vals names checked = (AddCheckBoxes label ty vals names checked) 
 
-  addSubmit : (interpCheckedFnTy G effs t) -> 
+  addSubmit : (interpCheckedFnTy G effs) -> 
               String -> 
               (effs : List WebEffect) -> 
-              (t : FormTy) -> 
               EffM m [FORM (FormRes G)] [FORM (FormRes [])] String
-  addSubmit fn name effs t = (Submit fn name effs t)
+  addSubmit fn name effs = (Submit fn name effs)
 
 
 UserForm = Eff id [FORM (FormRes [])] String -- Making a form is a pure function (atm)
@@ -391,8 +389,8 @@ SerialisedForm = String
 
 
 data PopFn : Type where
-  PF : (w_effs : List WebEffect) -> (ret_ty : FormTy) -> 
+  PF : (w_effs : List WebEffect) ->  
        (effs : List EFFECT) -> (env : Effects.Env IO effs) -> 
-       Eff IO effs (interpFormTy ret_ty) -> PopFn
+       Eff IO effs () -> PopFn
 
 

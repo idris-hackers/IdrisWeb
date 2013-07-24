@@ -34,14 +34,12 @@ showFormVal (FormList t) vs = "[" ++ (foldr (\v, str => (showFormVal t v) ++ ","
 serialiseSubmit : String -> 
                   Vect FormTy n -> 
                   List WebEffect -> 
-                  FormTy -> 
                   String
-serialiseSubmit name tys effs ret = "<input type=\"hidden\" name=\"handler\" value=\"" ++ name ++ "." ++
-                                     serialised_tys ++ "." ++ serialised_effs ++ "." ++ serialised_ret ++ "-\"></input>" ++
+serialiseSubmit name tys effs = "<input type=\"hidden\" name=\"handler\" value=\"" ++ name ++ "." ++
+                                     serialised_tys ++ "." ++ serialised_effs ++ ".\"></input>" ++
                                     "<input type=\"submit\"></input></form>"  
   where serialised_tys = foldr (\ty, str => str ++ (show ty) ++ "-") "" tys
         serialised_effs = foldr (\eff, str => str ++ (show eff) ++ "-") "" (reverse effs)
-        serialised_ret =  (show ret) 
 
 
 val_opts : (fty : FormTy) -> (Vect (interpFormTy fty) n) -> Vect String n -> String
@@ -84,8 +82,8 @@ getDefValStr ty Nothing = ""
 
 instance Handler Form m where
 -- Submit
-  handle (FR len tys ser_str) (Submit fn name effs t) k = 
-    k (FR O [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs t) ++ "</td></tr></table>")
+  handle (FR len tys ser_str) (Submit fn name effs) k = 
+    k (FR O [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs) ++ "</td></tr></table>")
 -- Text box
   handle (FR len tys ser_str) (AddTextBox label fty def_val) k = 
     k (FR (S len) (fty :: tys) 
@@ -135,7 +133,7 @@ getAs ty n args = do val <- lookup ("inp" ++ (show n)) args
 -- Disregards args
 public
 mkFinalHandlerType : MkHandlerFnTy -> Type
-mkFinalHandlerType (_, effs, ret) = FormHandler (interpWebEffects effs) (interpFormTy ret)
+mkFinalHandlerType (_, effs) = FormHandler (interpWebEffects effs)
 
 getWebEnv' : (effs : List WebEffect) -> (InitialisedCGI TaskRunning) -> Effects.Env IO (interpWebEffects effs)
 -- Def later
@@ -156,10 +154,10 @@ evalFn : (mkHTy : MkHandlerFnTy) ->
          (fn : mkHandlerFn mkHTy) ->
          (InitialisedCGI TaskRunning) ->
          (mkFinalHandlerType mkHTy, PopFn)
-evalFn (Prelude.List.Nil, effs, ret) counter args fn cgi = (fn, 
-         (PF effs ret (interpWebEffects effs) (getWebEnv' effs cgi) fn))-- ?mv -- Just (fn, )
-evalFn ((fty :: ftys), effs, ret) counter args fn cgi = let arg = getAs fty counter args in
-                                                                   evalFn (ftys, effs, ret) (counter + 1) args (fn arg) cgi
+evalFn (Prelude.List.Nil, effs) counter args fn cgi = (fn, 
+         (PF effs (interpWebEffects effs) (getWebEnv' effs cgi) fn))-- ?mv -- Just (fn, )
+evalFn ((fty :: ftys), effs) counter args fn cgi = let arg = getAs fty counter args in
+                                                                   evalFn (ftys, effs) (counter + 1) args (fn arg) cgi
 
 {- Parser functions to grab arguments from a form -}
 strFty : List (String, FormTy)
@@ -206,12 +204,10 @@ parseFormFn' = do name <- strToken
                   args <- many (arg ||| ty_list)
                   char '.' -- List delimiter
                   effs <- many webEff
-                  char '.'
-                  ret <- arg
-                  pure (name, (args, effs, ret))
+                  pure (name, (args, effs))
                   
 -- The hidden field "handler" will be of the form:
--- <handler name>:type1;type2...typen;:<effects, eventually>:return type;
+-- <handler name>:type1;type2...typen;:<effects, eventually>
 parseFormFn : String -> Maybe (String, MkHandlerFnTy)
 parseFormFn str = case parse parseFormFn' str of
                        Left err => Nothing
@@ -237,11 +233,8 @@ getHandler vars handler_name handler_type handlers cgi = do
                               (RH rh_type rh_fn) <- lookup handler_name handlers
                               rh_fn' <- checkFunctions rh_type handler_type rh_fn
                               let f_rh = (RH handler_type rh_fn') 
-                              let (tys, effs, ret) = handler_type 
+                              let (tys, effs) = handler_type 
                               Just $ evalFn handler_type 0 vars rh_fn' cgi
-
-getWebEffects : MkHandlerFnTy -> List WebEffect
-getWebEffects (_, effs, _) = effs
 
 inspectFinalEnv : (effs : List EFFECT) -> Env IO effs -> (InitialisedCGI TaskRunning) -> (InitialisedCGI TaskRunning)
 inspectFinalEnv [] _ def = def
@@ -254,9 +247,9 @@ addOutput : String -> CGIInfo -> CGIInfo
 executeHandler : List (String, String) -> List (String, RegHandler) -> (InitialisedCGI TaskRunning) -> IO (InitialisedCGI TaskRunning, Bool)
 executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn of
                                       Just (name, frm_ty) => case getHandler vars name frm_ty handlers cgi of
-                                        Just (fn, (PF effs ret conc_effs env fn')) => do (env', res) <- runEnv env fn'
-                                                                                         let cgi' = inspectFinalEnv conc_effs env' cgi
-                                                                                         pure (cgi', True)
+                                        Just (fn, (PF effs conc_effs env fn')) => do (env', res) <- runEnv env fn'
+                                                                                     let cgi' = inspectFinalEnv conc_effs env' cgi
+                                                                                     pure (cgi', True)
                                         Nothing => do let (ICgi st) = cgi
                                                       let cgi' = (addOutput "Found handler field; could not execute" st)
                                                       pure ((ICgi cgi'), False)
@@ -452,7 +445,6 @@ instance Handler Cgi IO where
   -- TODO: allow GET vars
   handle (ICgi st) (HandleForm handlers) k = do let post_vars = POST st
                                                 (cgi', res) <- executeHandler post_vars handlers (ICgi st)
-                                                -- TODO (if poss): allow return vals
                                                 k cgi' res
 
 -- Internal mechanism to run the user-specified action
