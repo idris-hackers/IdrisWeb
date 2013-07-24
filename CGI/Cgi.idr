@@ -82,30 +82,32 @@ getDefValStr ty Nothing = ""
 
 instance Handler Form m where
 -- Submit
-  handle (FR len tys ser_str) (Submit fn name effs) k = 
-    k (FR O [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs) ++ "</td></tr></table>")
+  handle (FR len tys effs ser_str) (Submit fn name) k = 
+    k (FR O [] [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs) ++ "</td></tr></table>")
 -- Text box
-  handle (FR len tys ser_str) (AddTextBox label fty def_val) k = 
+  handle (FR len tys effs ser_str) (AddTextBox label fty def_val) k = 
     k (FR (S len) (fty :: tys) 
-      (ser_str ++ "<tr><td>" ++ label ++ "</td><td><input name=\"inp" ++ (show len) ++ "\" " ++ (getDefValStr fty def_val) ++ "\"></input></td></tr>\n")) ()
+      effs (ser_str ++ "<tr><td>" ++ label ++ "</td><td><input name=\"inp" ++ (show len) ++ "\" " ++ (getDefValStr fty def_val) ++ "\"></input></td></tr>\n")) ()
 -- Hidden field
-  handle (FR len tys ser_str) (AddHidden fty val) k = 
+  handle (FR len tys effs ser_str) (AddHidden fty val) k = 
     k (FR (S len) (fty :: tys) 
-      (ser_str ++ "<input type=\"hidden\" name=\"inp" ++ (show len) ++ "\" value=\"" ++ (showFormVal fty val) ++ "\"></input></td></tr>\n")) ()
+      effs (ser_str ++ "<input type=\"hidden\" name=\"inp" ++ (show len) ++ "\" value=\"" ++ (showFormVal fty val) ++ "\"></input></td></tr>\n")) ()
 -- Dropdown selection box
-  handle (FR len tys ser_str) (AddSelectionBox label fty opts names) k = 
+  handle (FR len tys effs ser_str) (AddSelectionBox label fty opts names) k = 
     k (FR (S len) (fty :: tys) 
-      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeSelectBox ("inp" ++ (show len)) fty opts names) ++ "</td></tr>\n")) ()  
+      effs (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeSelectBox ("inp" ++ (show len)) fty opts names) ++ "</td></tr>\n")) ()  
 -- Radio button group
-  handle (FR len tys ser_str) (AddRadioGroup label fty opts names default) k = 
+  handle (FR len tys effs ser_str) (AddRadioGroup label fty opts names default) k = 
     k (FR (S len) (fty :: tys) 
-      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeRadioGroup ("inp" ++ (show len)) fty opts names default) ++ "</td></tr>\n" )) ()
--- Check boxes
-  handle (FR len tys ser_str) (AddCheckBoxes label fty opts names checked) k = 
-    k (FR (S len) ((FormList fty) :: tys) 
-      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeCheckBoxes ("inp" ++ (show len)) fty opts names checked) ++ "</td></tr>\n" )) ()
-    -- <input type="text" name="inpx" value="val">
-
+      effs (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeRadioGroup ("inp" ++ (show len)) fty opts names default) ++ "</td></tr>\n" )) ()
+-- Check boxes 
+  handle (FR len tys effs ser_str) (AddCheckBoxes label fty opts names checked) k = 
+    k (FR (S len) ((FormList fty) :: tys) effs
+      (ser_str ++ "<tr><td>" ++ label ++ "</td><td>" ++ (makeCheckBoxes ("inp" ++ (show len)) fty opts names checked) ++ "</td></tr>\n" )) () 
+    -- <input type="text" name="inpx" value="val"> 
+-- Set effects
+  handle (FR len tys _ ser_str) (UseEffects effs) k = 
+     k (FR len tys effs ser_str) ()
 
 
 {- Form handling stuff -}
@@ -264,7 +266,7 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
 
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
 mkForm : String -> String -> UserForm -> SerialisedForm
-mkForm name action frm = runPure [FR O [] ("<table><form name=\"" ++ name ++ 
+mkForm name action frm = runPure [FR O [] [] ("<table><form name=\"" ++ name ++ 
                          "\" action=\"" ++ action ++ "\" method=\"post\">\n")] frm
 
 

@@ -195,57 +195,129 @@ mkHandlerFn' (x :: xs) effs = Maybe (interpFormTy x) -> mkHandlerFn' xs effs
 mkHandlerFn : MkHandlerFnTy -> Type 
 mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
 
-
 data RegHandler : Type where
   RH : (ft : MkHandlerFnTy) -> mkHandlerFn ft -> RegHandler
 
+--------
+-- START NEW STUFF
+--------
+{-
+interpRH RegHandler -> Type
+interpRH (RH (args, effs) fn) = interpRH' args where
+  interpRH' [] = FormHandler (interpWebEffects effs)
+  interpRH' (x :: xs) = interpFormTy x -> interpRH' xs
 
-interpCheckedFnTy : Vect FormTy n -> List EFFECT -> Type
+
+testFn1 : Int -> String -> String
+testFn1 x y = show x ++ ", " ++ show y
+
+testFn2 : Int -> Int 
+testFn2 x = x * 2
+
+
+test1 : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)]
+test2 (Just name) (Just age) = do
+  output "Your name is " ++ name
+  output $ " and you are " ++ show age ++ " years old!"
+  pure ()
+
+
+test2 : Maybe String -> Maybe Int -> FormHandler [CGI (InitialisedCGI TaskRunning)]
+test2 (Just name) (Just age) = do
+  output "Your name is " ++ name
+  output $ " and you are " ++ show age ++ " years old!"
+  pure ()
+
+
+RHList : Type
+RHList = List ((ft : MkHandlerFnTy) ** (interp ft, String))
+
+
+fnList : FunList
+fnList = [(FnTy [TyInt, TyString] TyString ** (testFn1, "test1")),
+          (FnTy [TyInt] TyInt ** (testFn2, "test2"))]
+
+
+rhList : RHList
+rhList = [sampleRH1]
+
+
+data FnElem : interpTy t -> FunList -> Type where 
+     Here : {xs : FunList, f : interpTy t} ->
+            FnElem f ((t ** (f, fStr)) :: xs)
+     There : {xs : FunList, f : interpTy t} ->
+             FnElem f xs -> FnElem f (x :: xs)
+
+findFn : Nat -> List (TTName, Binder TT) -> TT -> Tactic -- Nat is maximum search depth
+findFn O ctxt goal = Refine "Here" `Seq` Solve 
+findFn (S n) ctxt goal = GoalType "FnElem" 
+          (Try (Refine "Here" `Seq` Solve)
+               (Refine "There" `Seq` (Solve `Seq` findFn n ctxt goal)))
+
+
+getString' : (f : interpTy t) ->
+             (fs : FunList) -> FnElem f fs -> String
+getString' f ((_ ** (_, n)) :: _) Here = n
+getString' f (_ :: fs) (There p) = getString' f fs p
+
+getString : (f : interpTy t) ->
+            (fs : FunList) -> 
+            {default tactics { applyTactic findFn 100; solve; }
+              prf : FnElem f fs} -> String
+getString f fs {prf} = getString' f fs prf
+-}
+-----
+----- END NEW STUFF
+-----
+
+interpCheckedFnTy : Vect FormTy n -> List WebEffect -> Type
 interpCheckedFnTy tys effs = interpCheckedFnTy' (reverse tys)
   where interpCheckedFnTy' : Vect FormTy n -> Type
-        interpCheckedFnTy' [] = FormHandler effs
+        interpCheckedFnTy' [] = FormHandler (interpWebEffects effs)
         interpCheckedFnTy' (x :: xs) = Maybe (interpFormTy x) -> interpCheckedFnTy' xs
 
 
-using (G : Vect FormTy n)
-  data FormRes : Vect FormTy n -> Type where
-    FR : Nat -> Vect FormTy n -> String -> FormRes G
+using (G : Vect FormTy n, E : List WebEffect)
+  data FormRes : Vect FormTy n -> List WebEffect -> Type where
+    FR : Nat -> Vect FormTy n -> List WebEffect -> String -> FormRes G E
 
   
   data Form : Effect where
     AddTextBox : (label : String) -> 
                  (fty : FormTy) -> 
                  (Maybe (interpFormTy fty)) -> 
-                 Form (FormRes G) (FormRes (fty :: G)) () 
+                 Form (FormRes G E) (FormRes (fty :: G) E) () 
 
     AddHidden  : (fty : FormTy) -> 
                  (interpFormTy fty) -> 
-                 Form (FormRes G) (FormRes (fty :: G)) () 
+                 Form (FormRes G E) (FormRes (fty :: G) E) () 
 
     AddSelectionBox : (label : String) ->
                       (fty : FormTy) ->
                       (vals : Vect (interpFormTy fty) m) ->
                       (names : Vect String m) ->
-                      Form (FormRes G) (FormRes (fty :: G)) ()
+                      Form (FormRes G E) (FormRes (fty :: G) E) ()
 
     AddRadioGroup : (label : String) -> 
                     (fty : FormTy) ->
                     (vals : Vect (interpFormTy fty) m) ->
                     (names : Vect String m) ->
                     (default : Int) ->
-                    Form (FormRes G) (FormRes (fty :: G)) ()
+                    Form (FormRes G E) (FormRes (fty :: G) E) ()
     
     AddCheckBoxes : (label : String) ->
                     (fty : FormTy) ->
                     (vals : Vect (interpFormTy fty) m) ->
                     (names : Vect String m) ->
                     (checked_boxes : Vect Bool m) ->
-                    Form (FormRes G) (FormRes ((FormList fty) :: G)) ()
+                    Form (FormRes G E) (FormRes ((FormList fty) :: G) E) ()
 
-    Submit : interpCheckedFnTy G effs -> 
+    UseEffects : (effs : List WebEffect) ->
+                 Form (FormRes G E) (FormRes G effs) ()
+
+    Submit : interpCheckedFnTy G E -> 
              String -> 
-             (effs : List WebEffect) -> 
-             Form (FormRes G) (FormRes []) String
+             Form (FormRes G E) (FormRes [] []) String
 
   FORM : Type -> EFFECT
   FORM t = MkEff t Form
@@ -253,19 +325,19 @@ using (G : Vect FormTy n)
   addTextBox : String ->
                (fty : FormTy) -> -- Data type
                (Maybe (interpFormTy fty)) ->  -- Default data value (optional)
-               EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+               EffM m [FORM (FormRes G E)] [FORM (FormRes (fty :: G) E)] ()
   addTextBox label ty val = (AddTextBox label ty val)
 
   addHidden : (fty : FormTy) ->
               (interpFormTy fty) -> -- Default value
-              EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+              EffM m [FORM (FormRes G E)] [FORM (FormRes (fty :: G) E)] ()
   addHidden ty val = (AddHidden ty val)
 
   addSelectionBox : String ->
                     (fty : FormTy) ->
                     (vals : Vect (interpFormTy fty) j) ->
                     (names : Vect String j) ->
-                    EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+                    EffM m [FORM (FormRes G E)] [FORM (FormRes (fty :: G) E)] ()
   addSelectionBox label ty vals names = (AddSelectionBox label ty vals names)
 
   addRadioGroup : String ->
@@ -273,7 +345,7 @@ using (G : Vect FormTy n)
                   (vals : Vect (interpFormTy fty) j) ->
                   (names : Vect String j) ->
                   (default : Int) ->
-                  EffM m [FORM (FormRes G)] [FORM (FormRes (fty :: G))] ()
+                  EffM m [FORM (FormRes G E)] [FORM (FormRes (fty :: G) E)] ()
   addRadioGroup label ty vals names default = (AddRadioGroup label ty vals names default)
 
   addCheckBoxes : (label : String) ->
@@ -281,17 +353,19 @@ using (G : Vect FormTy n)
                   (vals : Vect (interpFormTy fty) j) ->
                   (names : Vect String j) ->
                   (checked_boxes : Vect Bool j) ->
-                  EffM m [FORM (FormRes G)] [FORM (FormRes ((FormList fty) :: G))] ()
+                  EffM m [FORM (FormRes G E)] [FORM (FormRes ((FormList fty) :: G) E)] ()
   addCheckBoxes label ty vals names checked = (AddCheckBoxes label ty vals names checked) 
 
-  addSubmit : (interpCheckedFnTy G effs) -> 
+  addSubmit : (interpCheckedFnTy G E) -> 
               String -> 
-              (effs : List WebEffect) -> 
-              EffM m [FORM (FormRes G)] [FORM (FormRes [])] String
-  addSubmit fn name effs = (Submit fn name effs)
+              EffM m [FORM (FormRes G E)] [FORM (FormRes [] [])] String
+  addSubmit fn name = (Submit fn name)
 
+  useEffects : (effs : List WebEffect) ->
+               EffM m [FORM (FormRes G E)] [FORM (FormRes G effs)] ()
+  useEffects effs = (UseEffects effs)
 
-UserForm = Eff id [FORM (FormRes [])] String -- Making a form is a pure function (atm)
+UserForm = Eff id [FORM (FormRes [] [])] String -- Making a form is a pure function (atm)
 
 
 
