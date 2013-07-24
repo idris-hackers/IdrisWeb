@@ -70,13 +70,10 @@ SessionData : Type
 SessionData = List (String, SessionDataType)
 
 {-
-dirtyLog : String -> a -> a
-dirtyLog msg val = unsafePerformIO (do dirtyLog'; return val)
-  where 
-    dirtyLog' : IO ()
-    dirtyLog' = do
-    file <- openFile "/tmp/deserialise.log" Write
-    fwrite file msg
+deserialiseSession : SerialisedSession -> Maybe SessionData
+deserialiseSession ss = sequence $ map (\(key, val, ty) => case (deserialiseVal ty val) of
+  Just dat => Just (key, dat)
+  Nothing => Nothing) ss
 -}
 
 deserialiseSession : SerialisedSession -> Maybe SessionData
@@ -100,9 +97,9 @@ collectResults = do
   step_result <- nextRow
   case step_result of
       StepComplete => do -- sess_key <- getColumnText 1
-                         key <- getColumnText 1
-                         val <- getColumnText 2
-                         ty <- getColumnText 3
+                         key <- getColumnText 0
+                         val <- getColumnText 1
+                         ty <- getColumnText 2
                          xs <- collectResults
                          Effects.pure $ (key, val, ty) :: xs
       NoMoreRows => Effects.pure []
@@ -114,7 +111,7 @@ retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either String SerialisedS
 retrieveSessionData s_id = do
   open_db <- openDB DB_NAME
   if open_db then do
-    let sql = "SELECT session_key, key, val, ty FROM `sessiondata` WHERE `session_key` = ?"
+    let sql = "SELECT key, val, ty FROM `sessiondata` WHERE `session_key` = ?"
     sql_prep_res <- prepareStatement sql
     if sql_prep_res then do
       startBind
@@ -304,6 +301,10 @@ instance Handler Session IO where
   -- Grab the session from the DB given the session key.
   -- If it exists, construct the resource and return the data.
   -- If not, return nothing, and reflect the invalidity in the resource.
+
+  -- This should never happen
+  handle (ValidSession _ _) (LoadSession _) k = k InvalidSession Nothing
+
   handle InvalidSession (LoadSession s_id) k = do
     maybe_session <- getSession s_id
     case maybe_session of
@@ -341,6 +342,7 @@ instance Handler Session IO where
   handle (ValidSession _ _) DiscardSessionChanges k = k InvalidSession ()
   handle (InvalidSession) DiscardSessionChanges k = k InvalidSession ()
 
+  handle (ValidSession _ _) (CreateSession _) k = k InvalidSession Nothing
   -- Creates a new session.
   -- BIG TODO: This random number gen is extremely rudimentary, and not
   -- secure enough for actual use.

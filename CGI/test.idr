@@ -18,9 +18,9 @@ incrementAndGetCount sd = case lookup "counter" sd of
 useSession : Maybe (SessionID, SessionData) -> EffM IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionInitialised)]
                                           [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised)]
                                           ()
-useSession (Just (si, sd)) = do count <- lift (Drop (Keep (SubNil))) (incrementAndGetCount sd)
-                                lift (Keep (Drop (SubNil))) (output $ "You have visited this page " ++ (show count) ++ " time(s)!")
-                                lift (Drop (Keep (SubNil))) writeSessionToDB
+useSession (Just (si, sd)) = do count <- lift' (incrementAndGetCount sd)
+                                lift' (output $ "You have visited this page " ++ (show count) ++ " time(s)!")
+                                lift' writeSessionToDB
                                 Effects.pure ()
 useSession Nothing = do output "There was a problem retrieving your session."
                         -- Delete the session for good measure
@@ -30,7 +30,7 @@ useSession Nothing = do output "There was a problem retrieving your session."
                         
 
 doCGIStuff : Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised)] ()
-doCGIStuff = do lift (Keep (Drop (SubNil))) (output "Hello, world!\n")
+doCGIStuff = do lift' (output "Hello, world!\n")
                 session <- getOrCreateSession
                 useSession session
 

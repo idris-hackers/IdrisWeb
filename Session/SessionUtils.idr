@@ -13,14 +13,14 @@ getOrCreateSession : EffM IO [CGI (InitialisedCGI TaskRunning), SESSION (Session
                                 (Maybe (SessionID, SessionData))
 getOrCreateSession = do
   -- Firstly grab the session ID from the cookies, if it exists
-  s_var <- lift (Keep (Drop (SubNil))) (queryCookieVar SESSION_VAR)
+  s_var <- lift' (queryCookieVar SESSION_VAR)
   case s_var of
        -- If it does exist, then attempt to load the session
-       Just s_id => do res <- (lift (Drop (Keep (SubNil))) (loadSession s_id))
+       Just s_id => do res <- lift' (loadSession s_id)
                        case res of 
-                           Just res' => Effects.pure $ Just (s_id, res')
-                           -- TODO: This should create a new session
-                           Nothing => Effects.pure $ Nothing 
+                         Just res' => Effects.pure $ Just (s_id, res') -- (s_id, res')
+                        -- TODO: This should create a new session
+                         Nothing => Effects.pure $ Nothing 
        -- If it doesn't, create a new, empty session
        Nothing => do res <- lift (Drop (Keep (SubNil))) (createSession [])
                      case res of

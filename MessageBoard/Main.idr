@@ -127,8 +127,8 @@ irritating_inner_case_fix_threadinsert uid content = do
           -- If the thread inserted correctly, insert the first post
           -- Ideally, this would be a transaction, but it will do for now.
           Right thread_id => do closeDB
+                                postInsert uid thread_id content
                                 pure True
-                                -- postInsert uid thread_id content
 
 threadInsert : Int -> String -> String -> Eff IO [SQLITE ()] Bool
 threadInsert uid title content = do
@@ -163,9 +163,9 @@ addNewThread title content sd = do
     Just (SInt uid) => do insert_res <- threadInsert uid title content
                           if insert_res then do
                             -- TODO: redirection would be nice
-                            output "Thread creation successful"
+                            output "Thread creation successful" 
                             discardSession
-                            pure ()
+                            pure () 
                           else do
                             output "There was an error adding the thread to the database."
                             discardSession
@@ -490,29 +490,33 @@ getThreads = do
     Effects.pure $ Left err
 
 
-actuallyPrintPostsBecauseTraverseIsBeingAnArse : List (String, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
-actuallyPrintPostsBecauseTraverseIsBeingAnArse [] = pure ()
-actuallyPrintPostsBecauseTraverseIsBeingAnArse ((name, content) :: xs) = output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>" 
+traversePosts : List (String, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+traversePosts [] = pure ()
+traversePosts ((name, content) :: xs) = do output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>" 
+                                           traversePosts xs 
 
 
 printPosts : ThreadID -> CGIProg [SQLITE ()] ()
 printPosts thread_id = do 
-  post_res <- lift (Drop (Keep (SubNil))) (getPosts thread_id)
+  post_res <- lift' (getPosts thread_id)
   case post_res of
-    Left err => do lift (Keep (Drop (SubNil))) (output $ "Could not retrieve posts, error: " ++ err)
+    Left err => do lift' (output $ "Could not retrieve posts, error: " ++ err)
                    Effects.pure ()
-    Right posts => do lift (Keep (Drop (SubNil))) (output "<table>")
-                      actuallyPrintPostsBecauseTraverseIsBeingAnArse posts
+    Right posts => do lift' (output "<table>")
+                      traversePosts posts
+                      lift' (output "</table>")
+                      lift' (output $ "<a href=\"?action=newpost&thread_id=" ++ (show thread_id) ++ "\">New post</a><br />")
+
                       --(Prelude.Applicative.traverse (\(name, content) => (lift (Keep (Drop (SubNil))) (output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>"))
                       -- posts))
-                      lift (Keep (Drop (SubNil))) (output "</table>")
                       Effects.pure ()
 
 traverseThreads : List (Int, String, Int, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
 traverseThreads [] = pure ()
-traverseThreads ((thread_id, title, uid, username) :: xs) = 
+traverseThreads ((thread_id, title, uid, username) :: xs) = do
   (output $ "<tr><td><a href=\"?action=showthread&thread_id=" ++ 
     (show thread_id) ++ "\">" ++ title ++ "</a></td><td>" ++ username ++ "</td></tr>")
+  traverseThreads xs
 
 printThreads : CGIProg [SQLITE ()] ()
 printThreads = do
@@ -520,12 +524,14 @@ printThreads = do
   case thread_res of
     Left err => do lift' (output $ "Could not retrieve threads, error: " ++ err)
                    Effects.pure ()
-    Right threads => do lift (Keep (Drop (SubNil))) (output "<table><th><td>Title</td><td>Author</td></th>")
+    Right threads => do lift' (output htmlPreamble)
+                        lift (Keep (Drop (SubNil))) (output "<table><tr><th>Title</th><th>Author</th></tr>")
                         traverseThreads threads
                         lift (Keep (Drop (SubNil))) (output "</table><br />")
                         output "<a href=\"?action=newthread\">Create a new thread</a><br />"
                         output "<a href=\"?action=register\">Register</a><br />"
                         output "<a href=\"?action=login\">Log In</a><br />"
+                        output htmlPostamble
                         Effects.pure ()
 ----------- 
 -- Request handling
