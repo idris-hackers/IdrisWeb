@@ -26,14 +26,10 @@ data DBVal = DBInt Int
            | DBFloat Float
            | DBNull
 
-data Value = VInt Int
-           | VStr String
-           | VFloat Float
-
 
 -- Type synonym for a table
-Table : Type
-Table = List (List DBVal)
+ResultSet : Type
+ResultSet = List (List DBVal)
 
 ArgPos : Type
 ArgPos = Int
@@ -496,3 +492,49 @@ executeInsert = do
         beginExecution
         finaliseStatement
         Effects.pure $ Left "Error inserting! StmtFail"
+
+multiBind' : List (Int, DBVal) -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] ()
+multiBind' [] = Effects.pure ()
+multiBind' ((pos, (DBInt i)) :: xs) = do bindInt pos i
+                                         multiBind' xs
+multiBind' ((pos, (DBFloat f)) :: xs) = do bindFloat pos f
+                                           multiBind' xs
+multiBind' ((pos, (DBText t)) :: xs) = do bindText pos t
+                                          multiBind' xs
+-- Binds multiple values within a query
+multiBind : List (Int, DBVal) -> EffM m [SQLITE (SQLiteRes PreparedStatementOpen)] [SQLITE (SQLiteRes PreparedStatementBound)] Bool
+multiBind vals = do
+  startBind
+  multiBind' vals
+  finishBind
+
+-- Convenience function to abstract around some of the boilerplate code.
+-- Takes in the DB name, query, a list of (position, variable value) tuples,
+-- a function to process the returned data, 
+executeSelect : String ->
+                String -> 
+                List (Int, DBVal) -> 
+                (Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (Either String ResultSet)) -> 
+                Eff m [SQLITE ()] (Either String ResultSet)
+executeSelect db_name q bind_vals fn = do
+  conn <- openDB db_name
+  if conn then do
+    prep_sql <- prepareStatement q
+    if prep_sql then do
+      bind_res <- multiBind bind_vals
+      if bind_res then do
+        beginExecution
+        res <- fn
+        finaliseStatement
+        closeDB
+        Effects.pure $ res
+      else do
+        err <- bindFail
+        Effects.pure $ Left err
+    else do
+      err <- stmtFail
+      Effects.pure $ Left err
+  else do
+    err <- connFail
+    Effects.pure $ Left err
+      
