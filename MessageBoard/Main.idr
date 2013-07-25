@@ -16,6 +16,36 @@ UserID = Int
 USERID_VAR : String
 USERID_VAR = "user_id"
 
+----------
+-- Handler info
+----------
+handleRegisterForm : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning),
+                                                                  SESSION (SessionRes SessionUninitialised),
+                                                                  SQLITE ()
+                                                                 ]
+
+handlePost : Maybe Int -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
+                                                            SESSION (SessionRes SessionUninitialised), 
+                                                            SQLITE ()
+                                                      ] 
+
+handleNewThread : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
+                                                               SESSION (SessionRes SessionUninitialised), 
+                                                               SQLITE ()
+                                                              ]  
+
+handleLoginForm : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning),
+                                                                  SESSION (SessionRes SessionUninitialised),
+                                                                  SQLITE ()
+                                                              ] 
+
+handlers : HandlerList
+handlers = [(([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect]) ** (handleRegisterForm, "handleRegisterForm")),
+            (([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect]) ** (handleLoginForm, "handleLoginForm")),
+            (([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect]) ** (handleNewThread, "handleNewThread")),
+            (([FormInt, FormString], [CgiEffect, SessionEffect, SqliteEffect]) ** (handlePost, "handlePost"))]
+ 
+
 -- Template system would be nice...
 htmlPreamble : String
 htmlPreamble = "<html><head><title>IdrisWeb Message Board</title></head><body>"
@@ -90,21 +120,17 @@ addPostToDB thread_id content sd = do
                          
 
 
-handlePost : Maybe Int -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
-                                                            SESSION (SessionRes SessionUninitialised), 
-                                                            SQLITE ()
-                                                      ] Bool
 handlePost (Just thread_id) (Just content) = do withSession (addPostToDB thread_id content) notLoggedIn
-                                                pure True
+                                                pure ()
 handlePost _ _ = do outputWithPreamble"<h1>Error</h1><br />There was an error processing your post."
-                    pure False
-
+                    pure ()
+{-
 newPostForm : Int -> UserForm
 newPostForm thread_id = do
--- todo: addHidden operation
   addHidden FormInt thread_id
   addTextBox "Post Content" FormString Nothing
-  addSubmit handlePost "handlePost" [CgiEffect, SessionEffect, SqliteEffect] FormBool
+  useEffects [CgiEffect, SessionEffect, SqliteEffect]
+  addSubmit handlePost handlers
 
 
 showNewPostForm : Int -> CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
@@ -113,7 +139,7 @@ showNewPostForm thread_id = do
   output "<h2>Create new post</h2>"
   addForm "newPostForm" "messageboard" (newPostForm thread_id)
   output htmlPostamble
-
+-}
 ----------- 
 -- Thread Creation
 -----------
@@ -174,20 +200,17 @@ addNewThread title content sd = do
                   pure ()
   
 -- Create a new thread, given the title and content
-handleNewThread : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning), 
-                                                               SESSION (SessionRes SessionUninitialised), 
-                                                               SQLITE ()
-                                                              ] Bool
 handleNewThread (Just title) (Just content) = do withSession (addNewThread title content) notLoggedIn
-                                                 pure True
+                                                 pure ()
 handleNewThread _ _ = do outputWithPreamble "<h1>Error</h1><br />There was an error posting your thread."
-                         pure False
+                         pure ()
 
 newThreadForm : UserForm
 newThreadForm = do
   addTextBox "Title" FormString Nothing
   addTextBox "Post Content" FormString Nothing -- password field would be good
-  addSubmit handleNewThread "handleNewThread" [CgiEffect, SessionEffect, SqliteEffect] FormBool
+  useEffects [CgiEffect, SessionEffect, SqliteEffect]
+  addSubmit handleNewThread handlers 
 
 
 showNewThreadForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
@@ -269,34 +292,32 @@ userExists username = do
     err <- connFail
     Effects.pure $ Left err
 
-handleRegisterForm : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning),
-                                                                  SESSION (SessionRes SessionUninitialised),
-                                                                  SQLITE ()
-                                                                 ] Bool
+
 handleRegisterForm (Just name) (Just pwd) = do 
   user_exists_res <- userExists name
   case user_exists_res of
     Left err => do outputWithPreamble "Error checking for user existence"
-                   pure False
+                   pure ()
     Right user_exists => 
       if (not user_exists) then do 
         insert_res <- insertUser name pwd
         case insert_res of
           Left err => do outputWithPreamble ("Error inserting new user" ++ err)
-                         pure False
+                         pure ()
           Right insert_res => do outputWithPreamble "User created successfully!"
-                                 pure True
+                                 pure ()
       else do outputWithPreamble "This user already exists; please pick another name!"
-              pure False
+              pure ()
                        
 handleRegisterForm _ _ = do outputWithPreamble "Error processing form input data."
-                            pure False
+                            pure ()
 
 registerForm : UserForm
 registerForm = do
   addTextBox "Username" FormString Nothing
   addTextBox "Password" FormString Nothing -- password field would be good
-  addSubmit handleRegisterForm "handleRegisterForm" [CgiEffect, SessionEffect, SqliteEffect] FormBool
+  useEffects [CgiEffect, SessionEffect, SqliteEffect]
+  addSubmit handleRegisterForm handlers
 
 showRegisterForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showRegisterForm = do output htmlPreamble
@@ -369,34 +390,31 @@ setSession user_id = do
   pure (sess_res && db_res)
 
 
-handleLoginForm : Maybe String -> Maybe String -> FormHandler [CGI (InitialisedCGI TaskRunning),
-                                                                  SESSION (SessionRes SessionUninitialised),
-                                                                  SQLITE ()
-                                                              ] Bool
 handleLoginForm (Just name) (Just pwd) = do
-  auth_res <- lift (Drop (Drop (Keep (SubNil)))) (authUser name pwd)
+  auth_res <- lift' (authUser name pwd)
   case auth_res of
     Right (Just uid) => do
       set_sess_res <- setSession uid
       if set_sess_res then do
-        lift (Keep (Drop (Drop (SubNil)))) (output $ "Welcome, " ++ name)
-        pure True
+        lift' (output $ "Welcome, " ++ name)
+        pure ()
       else do
-        lift (Keep (Drop (Drop (SubNil)))) (output "Could not set session")
-        pure False
+        lift' (output "Could not set session")
+        pure ()
     Right Nothing => do
-      lift (Keep (Drop (Drop (SubNil)))) (output "Invalid username or password")
-      pure False
+      lift' (output "Invalid username or password")
+      pure ()
     Left err => do
-      lift (Keep (Drop (Drop (SubNil)))) (output $ "Error: " ++ err)
-      pure False
+      lift' (output $ "Error: " ++ err)
+      pure ()
 
 
 loginForm : UserForm
 loginForm = do
   addTextBox "Username" FormString Nothing
   addTextBox "Password" FormString Nothing -- password field would be good
-  addSubmit handleLoginForm "handleLoginForm" [CgiEffect, SessionEffect, SqliteEffect] FormBool
+  useEffects [CgiEffect, SessionEffect, SqliteEffect]
+  addSubmit handleLoginForm handlers
 
 showLoginForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showLoginForm = do output htmlPreamble
@@ -538,19 +556,14 @@ printThreads = do
 -----------
 handleNonFormRequest : Maybe String -> Maybe Int -> CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 handleNonFormRequest (Just "newthread") Nothing = showNewThreadForm
-handleNonFormRequest (Just "newpost") (Just thread_id) = showNewPostForm thread_id
+--handleNonFormRequest (Just "newpost") (Just thread_id) = showNewPostForm thread_id
 handleNonFormRequest (Just "showthread") (Just thread_id) = printPosts thread_id
 handleNonFormRequest (Just "register") Nothing = showRegisterForm
 handleNonFormRequest (Just "login") Nothing = showLoginForm
 handleNonFormRequest Nothing _ =  printThreads
 
 
-handlers : List (String, RegHandler)
-handlers = [("handleRegisterForm", RH ([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect], FormBool) handleRegisterForm),
-            ("handleLoginForm", RH ([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect], FormBool) handleLoginForm),
-            ("handleNewThread", RH ([FormString, FormString], [CgiEffect, SessionEffect, SqliteEffect], FormBool) handleNewThread),
-            ("handlePost", RH ([FormInt, FormString], [CgiEffect, SessionEffect, SqliteEffect], FormBool) handlePost)]
- 
+
 -- Hacky, probably best to use the parser
 strToInt : String -> Int
 strToInt s = cast s

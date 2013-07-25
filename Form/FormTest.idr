@@ -20,9 +20,19 @@ sampleHandler (Just name) (Just age) = do (output ("Your name is: " ++ name ++
 sampleHandler _ _ = do output "There was an error processing form data."
                        pure ()
 
+sampleHandler2 : Maybe String -> 
+                Maybe Int -> 
+                FormHandler [CGI (InitialisedCGI TaskRunning), SQLITE ()]
+sampleHandler2 (Just name) (Just age) = do (output ("Your name is: " ++ name ++ 
+                                             ", and you are " ++ (show age) ++ " years old!"))
+                                           pure ()
+sampleHandler2 _ _ = do output "There was an error processing form data."
+                        pure ()
+
 -- Some syntax macro magic might be nice here
 handlers : HandlerList
-handlers = [(([FormString, FormInt], [CgiEffect, SqliteEffect]) ** (sampleHandler, "sampleHandler"))]
+handlers = [(([FormString, FormInt], [CgiEffect, SqliteEffect]) ** (sampleHandler, "sampleHandler")),
+            (([FormString, FormInt], [CgiEffect, SqliteEffect]) ** (sampleHandler2, "sampleHandler2"))]
 
 sampleForm : UserForm --UserForm
 sampleForm = do addTextBox "Name: " FormString (Just "Simon")
@@ -32,7 +42,7 @@ sampleForm = do addTextBox "Name: " FormString (Just "Simon")
 
 
 cgiAction : CGIProg [] ()
-cgiAction = do output "<h1>Simon's awesome form stuff!</h1>\n"
+cgiAction = do output "<h1>Simon's awesome sauce form stuff!</h1>\n"
                handlervar <- queryPostVar "handler"
                post_vars <- getPOSTVars
                let post_vars_str = foldr (\(k, v), str => str ++ k ++ " :-> " ++ v ++ "<br />") "" post_vars

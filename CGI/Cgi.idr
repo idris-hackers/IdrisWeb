@@ -211,10 +211,9 @@ checkFunctions : (reg_fn_ty : MkHandlerFnTy) ->
                  (frm_fn_ty : MkHandlerFnTy) -> 
                  mkHandlerFn reg_fn_ty -> 
                  Maybe (mkHandlerFn frm_fn_ty)
---checkFunctions reg_fn_ty frm_fn_ty reg_fn = if reg_fn_ty == frm_fn_ty then Just (RH frm_fn_ty reg_fn) else Nothing
-checkFunctions reg_fn_ty frm_fn_ty reg_fn with (decEq reg_fn_ty frm_fn_ty)
-  checkFunctions frm_fn_ty frm_fn_ty reg_fn | Yes refl = Just reg_fn
-  checkFunctions reg_fn_ty frm_fn_ty reg_fn | No _ = Nothing
+checkFunctions reg_ty frm_ty reg_fn with (decEq reg_ty frm_ty)
+  checkFunctions frm_ty frm_ty reg_fn | Yes refl = Just reg_fn
+  checkFunctions reg_ty frm_ty reg_fn | No _ = Nothing
                                           
 
 lookupHandler : String -> HandlerList -> Maybe HandlerFn
