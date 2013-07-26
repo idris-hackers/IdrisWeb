@@ -508,13 +508,28 @@ multiBind vals = do
   multiBind' vals
   finishBind
 
+
+collectResults : (Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal)) ->
+                 Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (Either String ResultSet)
+collectResults fn = do
+  step_result <- nextRow
+  case step_result of
+    StepComplete => do results <- fn
+                       xs <- collectResults fn
+                       Effects.pure $ [| (Prelude.List.(::)) (Right results) xs |]
+                       {-case xs of
+                         Left err => pure err
+                         Right xs' => pure $ results :: xs'-}
+    NoMoreRows => Effects.pure $ Right []
+    StepFail => Effects.pure $ Left "StepFail encountered"
+
 -- Convenience function to abstract around some of the boilerplate code.
 -- Takes in the DB name, query, a list of (position, variable value) tuples,
 -- a function to process the returned data, 
 executeSelect : String ->
                 String -> 
                 List (Int, DBVal) -> 
-                (Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (Either String ResultSet)) -> 
+                (Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal)) -> 
                 Eff m [SQLITE ()] (Either String ResultSet)
 executeSelect db_name q bind_vals fn = do
   conn <- openDB db_name
@@ -524,7 +539,7 @@ executeSelect db_name q bind_vals fn = do
       bind_res <- multiBind bind_vals
       if bind_res then do
         beginExecution
-        res <- fn
+        res <- collectResults fn
         finaliseStatement
         closeDB
         Effects.pure $ res

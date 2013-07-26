@@ -124,7 +124,7 @@ handlePost (Just thread_id) (Just content) = do withSession (addPostToDB thread_
                                                 pure ()
 handlePost _ _ = do outputWithPreamble"<h1>Error</h1><br />There was an error processing your post."
                     pure ()
-{-
+
 newPostForm : Int -> UserForm
 newPostForm thread_id = do
   addHidden FormInt thread_id
@@ -139,7 +139,7 @@ showNewPostForm thread_id = do
   output "<h2>Create new post</h2>"
   addForm "newPostForm" "messageboard" (newPostForm thread_id)
   output htmlPostamble
--}
+
 ----------- 
 -- Thread Creation
 -----------
@@ -428,91 +428,38 @@ showLoginForm = do output htmlPreamble
 -- Post / Thread Display
 -----------
 
---asInt : Integer -> Int
---asInt i = fromInteger i
-
-collectPostResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List (String, String))
-collectPostResults = do
-  step_result <- nextRow
-  case step_result of
-    StepComplete => do name <- getColumnText 0
-                       content <- getColumnText 1
-                       xs <- collectPostResults
-                       Effects.pure $ (name, content) :: xs
-    NoMoreRows => Effects.pure []
-    StepFail => Effects.pure []
-
+collectPostResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal) -- (List (String, String))
+collectPostResults = do name <- getColumnText 0
+                        content <- getColumnText 1
+                        pure [DBText name, DBText content]
 -- Gets the posts
-getPosts : Int -> Eff IO [SQLITE ()] (Either String (List (String, String)))
-getPosts thread_id = do
-  open_db <- openDB DB_NAME
-  if open_db then do
-    let sql = "SELECT `Username`, `Content` FROM `Posts` NATURAL JOIN `Users` WHERE `ThreadID` = ?"
-    prep_res <- prepareStatement sql
-    if prep_res then do
-      startBind
-      bindInt 1 thread_id
-      bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        results <- collectPostResults
-        finaliseStatement
-        closeDB 
-        Effects.pure $ Right results
-      else do
-        err <- bindFail
-        Effects.pure $ Left err
-    else do
-      err <- stmtFail
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+getPosts : Int -> Eff IO [SQLITE ()] (Either String ResultSet)
+getPosts thread_id =
+  executeSelect DB_NAME query bind_vals collectPostResults
+ where query = "SELECT `Username`, `Content` FROM `Posts` NATURAL JOIN `Users` WHERE `ThreadID` = ?"
+       bind_vals = [(1, DBInt thread_id)]  
 
 
-
-collectThreadResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List (Int, String, Int, String))
-collectThreadResults = do
-  step_result <- nextRow
-  case step_result of
-    StepComplete => do thread_id <- getColumnInt 0
-                       title <- getColumnText 1
-                       uid <- getColumnInt 2
-                       username <- getColumnText 3
-                       xs <- collectThreadResults
-                       Effects.pure $ (thread_id, title, uid, username) :: xs
-    NoMoreRows => Effects.pure []
-    StepFail => Effects.pure []
-
+collectThreadResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal) 
+collectThreadResults = do thread_id <- getColumnInt 0
+                          title <- getColumnText 1
+                          uid <- getColumnInt 2
+                          username <- getColumnText 3
+                          pure [DBInt thread_id, DBText title, DBInt uid, DBText username]
 
 -- Returns (Title, Thread starter ID, Thread starter name)
-getThreads : Eff IO [SQLITE ()] (Either String (List (Int, String, Int, String)))
-getThreads = do
-  open_db <- openDB DB_NAME
-  if open_db then do
-    let sql = "SELECT `ThreadID`, `Title`, `UserID`, `Username` FROM `Threads` NATURAL JOIN `Users`"
-    prep_res <- prepareStatement sql
-    if prep_res then do
-      startBind
-      finishBind
-      beginExecution
-      results <- collectThreadResults
-      finaliseStatement
-      closeDB
-      Effects.pure $ Right results
-    else do
-      err <- stmtFail
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+getThreads : Eff IO [SQLITE ()] (Either String ResultSet)
+getThreads = executeSelect DB_NAME query [] collectThreadResults
+  where query = "SELECT `ThreadID`, `Title`, `UserID`, `Username` FROM `Threads` NATURAL JOIN `Users`"
 
 
-traversePosts : List (String, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+traversePosts : ResultSet -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
 traversePosts [] = pure ()
-traversePosts ((name, content) :: xs) = do output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>" 
-                                           traversePosts xs 
-
+traversePosts (x :: xs) = do traverseRow x 
+                             traversePosts xs
+  where traverseRow : List DBVal -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+        traverseRow ((DBText name)::(DBText content)::[]) = output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>"
+        traverseRow _ = pure () -- invalid row, discard
 
 printPosts : ThreadID -> CGIProg [SQLITE ()] ()
 printPosts thread_id = do 
@@ -524,17 +471,17 @@ printPosts thread_id = do
                       traversePosts posts
                       lift' (output "</table>")
                       lift' (output $ "<a href=\"?action=newpost&thread_id=" ++ (show thread_id) ++ "\">New post</a><br />")
-
-                      --(Prelude.Applicative.traverse (\(name, content) => (lift (Keep (Drop (SubNil))) (output $ "<tr><td>" ++ name ++ "</td><td>" ++ content ++ "</td></tr>"))
-                      -- posts))
                       Effects.pure ()
 
-traverseThreads : List (Int, String, Int, String) -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+traverseThreads : ResultSet -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
 traverseThreads [] = pure ()
-traverseThreads ((thread_id, title, uid, username) :: xs) = do
-  (output $ "<tr><td><a href=\"?action=showthread&thread_id=" ++ 
-    (show thread_id) ++ "\">" ++ title ++ "</a></td><td>" ++ username ++ "</td></tr>")
-  traverseThreads xs
+traverseThreads (x::xs) = do traverseRow x
+                             traverseThreads xs
+  where traverseRow : List DBVal -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+        traverseRow ((DBInt thread_id)::(DBText title)::(DBInt user_id)::(DBText username)::[]) =
+           (output $ "<tr><td><a href=\"?action=showthread&thread_id=" ++ 
+            (show thread_id) ++ "\">" ++ title ++ "</a></td><td>" ++ username ++ "</td></tr>") 
+        traverseRow _ = pure ()
 
 printThreads : CGIProg [SQLITE ()] ()
 printThreads = do
@@ -556,7 +503,7 @@ printThreads = do
 -----------
 handleNonFormRequest : Maybe String -> Maybe Int -> CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 handleNonFormRequest (Just "newthread") Nothing = showNewThreadForm
---handleNonFormRequest (Just "newpost") (Just thread_id) = showNewPostForm thread_id
+handleNonFormRequest (Just "newpost") (Just thread_id) = showNewPostForm thread_id
 handleNonFormRequest (Just "showthread") (Just thread_id) = printPosts thread_id
 handleNonFormRequest (Just "register") Nothing = showRegisterForm
 handleNonFormRequest (Just "login") Nothing = showLoginForm
@@ -569,15 +516,15 @@ strToInt : String -> Int
 strToInt s = cast s
 
 handleRequest : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
-handleRequest = do handler_var <- queryPostVar "handler"
+handleRequest = do handler_set <- isHandlerSet
                    -- A better way might be (ifHandlerSet ...)
-                   case handler_var of
-                     Just _ => do lift (Keep (Drop (Drop (SubNil)))) (handleForm handlers)
-                                  Effects.pure ()
-                     Nothing => do
-                       action <- lift (Keep (Drop (Drop (SubNil)))) (queryGetVar "action")
-                       thread_id <- lift (Keep (Drop (Drop (SubNil)))) (queryGetVar "thread_id")
-                       handleNonFormRequest action (map strToInt thread_id)
+                   if handler_set then do
+                     lift' (handleForm handlers)
+                     Effects.pure ()
+                   else do
+                     action <- lift' (queryGetVar "action")
+                     thread_id <- lift' (queryGetVar "thread_id")
+                     handleNonFormRequest action (map strToInt thread_id)
 
 main : IO ()
 main = do runCGI [initCGIState, InvalidSession, ()] handleRequest

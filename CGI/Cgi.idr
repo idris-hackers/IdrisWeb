@@ -479,4 +479,6 @@ getWebEnv' (CgiEffect :: xs) cgi = (cgi) :: getWebEnv' xs cgi
 getWebEnv' (SqliteEffect :: xs) cgi = (()) :: getWebEnv' xs cgi
 getWebEnv' (SessionEffect :: xs) cgi = (InvalidSession) :: getWebEnv' xs cgi
 
+isHandlerSet : Eff IO [CGI (InitialisedCGI TaskRunning)] Bool
+isHandlerSet = queryPostVar "handler" >>= (Effects.pure . isJust)
 
