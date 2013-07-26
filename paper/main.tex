@@ -59,8 +59,8 @@
 
 \titlebanner{Draft for submission to IFL 2013}        % These are ignored unless
 \preprintfooter{}   % 'preprint' option specified.
-\title{Correct and Secure Web Programming using Dependent Types and
-Embedded Domain-Specific Languages}
+
+\title{Correct and Secure Web Programming using Dependent Types and Embedded Domain-Specific Languages}
 %\subtitle{Using Embedded Domain-Specific Languages to Improve Confidence in Web Applications}
 
 \authorinfo{Simon Fowler \and Edwin Brady}
@@ -70,8 +70,11 @@ Embedded Domain-Specific Languages}
 \maketitle
 
 \begin{abstract}
+Dependently-typed languages allow types to be used to impose arbitrarily-specific constraints on programs, in turn allowing for easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker, and additional proofs may have to be specified by a user.
 
- 
+Research into embedded domain-specific languages attempt to address this problem by introducing a layer of abstraction over the underlying types, allowing for domain-specific code to be written in high-level languages which use dependent types to enforce certain invariants without requiring complex proofs to be specified.
+
+In this paper, we apply this technique to web programming, showing that embedded domain-specific languages can be constructed to enforce resource usage protocols associated with common web operations such as CGI, database access and session handling. Additionally, we show that this technique may be employed to allow the creation and handling of web forms which retain type information, reducing the scope for programmer error and attacks which exploit the loss of type information, such as SQL injection.
 \end{abstract}
 
 %\category{CR-number}{subcategory}{third-level}
@@ -381,6 +384,34 @@ collectResults = do
 \end{verbatim}
 }
 
+In order to decrease unnecessary boilerplate code in user applications, we provide functions which abstract out unnecessary parts of this process. In order to do this, we define the algebraic data type \texttt{DBVal}, which is a tagged union over simple primitive types:
+{\small
+\begin{verbatim}
+data DBVal = DBInt Int
+           | DBText String
+           | DBFloat Float
+           | DBNull
+\end{verbatim}
+}
+We also make use of the \texttt{ResultSet} type, which is a list of returned database rows.
+\begin{verbatim}
+ResultSet : Type
+ResultSet = List (List DBVal)
+\end{verbatim}
+Using these, we may implement a function, \texttt{ExecuteSelect}, which, given a query, a list of variables to bind and their associated indices within the query, and a function which is used to extract information out of each returned database row, returns either a \texttt{ResultSet} or an error.
+{\small
+\begin{verbatim}
+executeSelect : String ->
+                String -> 
+                List (Int, DBVal) -> 
+                (Eff m [SQLITE 
+                  (SQLiteRes PreparedStatementExecuting)
+                   ] 
+                 (List DBVal)
+                ) -> 
+                Eff m [SQLITE ()] (Either String ResultSet)
+\end{verbatim}
+}
 % =================================================
 
 \subsection{A Simple Session Handler}
@@ -615,7 +646,17 @@ We may then parse the arguments according to the types specified by the handler 
 \section{Extended Example: Message Board}
 \section{Related Work}
 \section{Conclusions}
+Dependently-typed languages have, for a long time, remained relatively unused outside of academia. Advances in embedded domain-specific languages have allowed many of the advantages of such languages, including the additional guarantees given by the successful compilation of a program (assuming the use of specific enough tyeps) to be adopted without the additional proofs traditionally required by users of such languages.
+
+We believe we have demonstrated that embedded domain-specific languages can be used to make use of the power of dependently-typed languages without incurring the traditional overheads of 
 \subsection{Further Work}
+We have shown that embedded domain-specific languages using dependent types and algebraic effects can be used to increase confidence in web applications by providing additional static guarantees about runtime behaviour, but much more can be done using the same approach.
+
+There are firstly many other applications which make use of specific resource usage protocols, for example popular libraries such as \textit{libgcrypt} \cite{libgcrypt}. Applying a similar approach would allow for sensitive programs requiring cryptographic routines to be written using a language with full dependent types, in turn adding an extra layer of confidence to their security. 
+
+Whilst the use of CGI allows for experimenting with the use of dependent types in a real-world scenario such as web programming, there remain practical considerations about its scalability, as a separate process must be created for each individual request request. Ultimately, we would like to create a web server written in \idris{}, which would make more efficient usage of resources. 
+
+Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that
 % Cryptography bindings would be really good.
 % Integration with a web server instead of doing everything over CGI
 % Improvements to form handling system
@@ -628,7 +669,7 @@ We may then parse the arguments according to the types specified by the handler 
 %This is the text of the appendix, if you need one.
 
 \acks
-% SICSA / EPSRC (grant number?)
+% SICSA / EPSRC (grant number?
 % #idris
 % Idris contributors, in particular Melissa for the SQLite bindings and whoever wrote Network.Cgi
 
