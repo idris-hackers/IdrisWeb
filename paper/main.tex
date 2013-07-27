@@ -97,7 +97,7 @@ This complexity can be ameliorated through the use of \textit{embedded domain-sp
 % Probably could do with rewriting a lot of this
 Web applications are also intrinsically side-effecting, requiring extensive network communication, database queries and file I/O. Purely functional programming languages such as Haskell \cite{haskell} handle this monadically, but the composition of different effects can be difficult. Developers either make use of \textit{monad transformers} to compose different effects, or handle everything in a much coarser-grained monad.
 
-\idris{} \cite{} is a language with full dependent types, and extensive support for embedded domain-specific languages through ad-hoc syntax overloading and syntax macros. Through the use of \idris{}, and the \texttt{Effects} library \cite{}, we present a dependently-typed web framework, which allows for the construction of programs with additional guarantees about correctness and security, whilst minimising the increase in development complexity. 
+\idris{} \cite{brady2011idris} is a language with full dependent types, and extensive support for embedded domain-specific languages through ad-hoc syntax overloading and syntax macros. Through the use of \idris{}, and the \texttt{Effects} library \cite{brady:effects}, we present a dependently-typed web framework, which allows for the construction of programs with additional guarantees about correctness and security, whilst minimising the increase in development complexity. 
 
 
 
@@ -107,7 +107,7 @@ The primary contribution of this paper is the application of previous work to sh
 \begin{itemize}
 \item Representations of CGI, SQLite and a simple session handler as \textit{algebraic effects}, allowing programs to be accepted only when they adhere to specific resource usage protocols.
 \item A form-handling mechanism, which preserves type information and therefore increases applications' resilience to attacks such as SQL injection.
-\item Sample applications, making use of the framework and demonstrating that it can be practically used.
+\item A message board application making use of the framework, and showing that the framework may be used for practical applications.
 \end{itemize}
 
 All code used in this paper is available online at \\ \verb+http://www.github.com/SimonJF/IdrisWeb+.
@@ -115,7 +115,7 @@ All code used in this paper is available online at \\ \verb+http://www.github.co
 % =================================================
 
 \section{An overview of the \texttt{Effects} library}
-\texttt{Effects} \cite{effects} is an EDSL which handles side-effects such as database access as \textit{algebraic effects}, allowing for greater code modularity. This section is intended to serve as a brief introduction to the library; for more information, see \cite{effects}.
+\texttt{Effects} \cite{effects} is an EDSL which handles side-effects such as database access as \textit{algebraic effects}, allowing for greater code modularity. This section is intended to serve as a brief introduction to the library; for more information, see \cite{brady:effects}.
 
 An effect is represented as an instance of the \texttt{EFFECT} type. Such instances may be associated with a \textit{resource}, 
 Describing a program in the \texttt{Effects} library is achieved using the following data type:
@@ -289,7 +289,7 @@ This is then passed, along with initial values for other effects that the user m
 \end{figure}
 
 
-SQLite is a lightweight SQL database engine \cite{sqlite} (TODO: More introduction-y stuff). We make use of SQLite due to its simplicity, although we envisage that these concepts would be applicable to more complex database management systems. Access to the SQLite library is provided through the use of the \idris{} foreign function interface \cite{ffi}, which is beyond the scope of this paper.
+SQLite is a lightweight SQL database engine \cite{sqlite} (TODO: More introduction-y stuff). We make use of SQLite due to its simplicity, although we envisage that these concepts would be applicable to more complex database management systems. Access to the SQLite library is provided through the use of the \idris{} foreign function interface \cite{brady2011idris}, which is beyond the scope of this paper.
 
 The creation, preparation and execution of SQL queries has a very specific usage protocol, with several possible points of failure. Failure is handled in traditional web applications by the generation of exceptions, which may be handled in the program.
 Handling such exceptions is often optional, however, and in some cases unhandled errors may cause a deployed web application to display an error to the user. Such errors can be used to determine the structure of an insecure SQL query, and are often used by attackers to determine attack vectors for SQL injection attacks.
@@ -630,7 +630,7 @@ Once the form has been submitted, a web application may handle the submitted dat
 
 With this data, we may then look up the function in the list of registered handlers by using the serialised unique handler identifier. In order to apply the handler function to the data submitted in the form, we must firstly prove to the type-checker that the deserialised \texttt{MkHandlerFnTy} is the same as the one retrieved from the list of registered handlers. We do this by making use of the \texttt{decEq} function, which determines whether two types are equal, returning a proof of equality if so, and a proof of inequality if not.
 
-With this proof, we may then use the \texttt{with} construct, inspired by \textit{views} in Agda \cite{viewfromleft}, to rewrite the arguments on the left hand side. This allows us to construct a function which, given the handler stored in the list of handlers, the data required to construct the function type and the \texttt{MkHandlerFnTy} deserialised from the form, determines whether the two \texttt{MkHandlerFnTy}s are decidably equal. If so, we may rewrite this on the left hand side, and therefore demonstrate that the recorded function may also be used to handle the form data. If not, the computation is abandoned and an error is shown. % I gave it a shot, right? :P
+With this proof, we may then use the \texttt{with} construct, inspired by \textit{views} in Agda \cite{mcbride.mckinna:viewfromleft}, to rewrite the arguments on the left hand side. This allows us to construct a function which, given the handler stored in the list of handlers, the data required to construct the function type and the \texttt{MkHandlerFnTy} deserialised from the form, determines whether the two \texttt{MkHandlerFnTy}s are decidably equal. If so, we may rewrite this on the left hand side, and therefore demonstrate that the recorded function may also be used to handle the form data. If not, the computation is abandoned and an error is shown. % I gave it a shot, right? :P
 {\small
 \begin{verbatim}
 checkFunctions : (reg_fn_ty : MkHandlerFnTy) -> 
@@ -643,8 +643,174 @@ checkFunctions reg_ty frm_ty reg_fn with
   checkFunctions reg_ty frm_ty reg_fn | No _ = Nothing
 \end{verbatim}}
 We may then parse the arguments according to the types specified by the handler function, and then apply the arguments to the handler function through the use of partial application. Finally, we may run the handler function, ensuring that all updates made to the CGI state are propagated.
+
+%-----------------------------
+%-----------------------------
+
 \section{Extended Example: Message Board}
+Using these components, we may now consider a larger example of a message board, allowing users to register, log in, view and create threads, and list and create new posts in threads. 
+
+Firstly, we create a database schema in which to record information stored by the message board. We create three tables: \texttt{Users}, which contains a unique User ID, usernames and passwords; \texttt{Threads}, which contains a unique thread ID, a title, and the ID of the user who created the thread; and \texttt{Posts}, which contains a unique post ID, the ID of the thread to which each post belongs, the content of the post, and the ID of the user that created the post.
+
+Secondly, we use a GET variable, \texttt{action}, to indicate which page of the message board should be displayed, and pattern-match on these to call the appropriate function which displays the page. Some pages, such as the page which shows all of the posts in a thread, require a second argument, \texttt{thread\_id}. 
+\subsection{Handling requests}
+Once the program is invoked via a CGI request, the \texttt{main} function will be called. We then run the remainder of the program through a call to \texttt{runCGI}, which we initialise with empty initial environments for the CGI, Session and SQLite effects, so they may be used in further computations. 
+
+{\small
+\begin{verbatim}
+main : IO ()
+main = do (runCGI [initCGIState, 
+                  InvalidSession, ()] 
+           handleRequest)
+          pure ()
+\end{verbatim}
+}
+The \texttt{handleRequest} function firstly checks to see whether the CGI request must handle previously-submitted form data, via the \texttt{isHandlerSet} function. If so, then the form handling routine is called, which parses the POST data in order to call the correct form handling function. If not, then the \texttt{handleNonFormRequest} function is called, which inspects the GET variables in order to display the correct page.
+{\small
+\begin{verbatim}
+handleRequest : CGIProg [SESSION 
+  (SessionRes SessionUninitialised), 
+  SQLITE ()] ()
+handleRequest = do 
+  handler_set <- isHandlerSet
+  if handler_set then do
+    lift' (handleForm handlers)
+    Effects.pure ()
+  else do
+    action <- lift' (queryGetVar "action")
+    thread_id <- lift' (queryGetVar "thread_id")
+    handleNonFormRequest action (map strToInt thread_id)
+\end{verbatim}
+}
+\subsection{Thread Creation}
+We specify four forms: one to handle registration, one to handle logging in, one to handle the creation of new threads, and one to handle the creation of new posts. One such example would be the form used to create a new thread, which contains elements for the title of the new thread and the content of the first post of the new thread.
+
+{\small
+\begin{verbatim}
+newThreadForm : UserForm
+newThreadForm = do
+  addTextBox "Title" FormString Nothing
+  addTextBox "Post Content" FormString Nothing 
+  useEffects [CgiEffect, SessionEffect, SqliteEffect]
+  addSubmit handleNewThread handlers
+\end{verbatim}
+}
+The form consists of two text boxes: one for the title of the thread, and one for the content of the first post. Both are of type \texttt{String}, as denoted by the \texttt{FormString} argument, and both have no default value. The handler function may make use of the \texttt{CGI}, \texttt{SESSION} and \texttt{SQLITE} effects, and the handler function is specified as \texttt{handleNewThread}. The \texttt{handlers} argument refers to the list of form handlers, and takes the following form:
+{\small
+\begin{verbatim}
+handlers : HandlerList
+handlers = [(([FormString, FormString], 
+              [CgiEffect, SessionEffect, SqliteEffect]) ** 
+               (handleRegisterForm, "handleRegisterForm")),
+               
+            (([FormString, FormString], 
+              [CgiEffect, SessionEffect, SqliteEffect]) ** 
+               (handleNewThread, "handleNewThread")),
+             ...
+            ]
+\end{verbatim}
+}
+Creating a new thread requires a user to be logged in, so that the thread starter may be recorded in the database. In order to do this, we make use of the session handler. We define a function \texttt{withSession}, which attempts to retrieve the session associated with the current request, and if it exists, executes a function which is passed the associated session data. If not, then a failure function is called instead. Should the form handler function be called with invalid arguments, an error is shown.
+{\small
+\begin{verbatim}
+handleNewThread : Maybe String -> 
+                  Maybe String -> 
+                  FormHandler [CGI (InitialisedCGI 
+                                 TaskRunning), 
+                               SESSION (SessionRes 
+                                 SessionUninitialised), 
+                               SQLITE ()]  
+handleNewThread (Just title) (Just content) = do 
+  withSession (addNewThread title content) notLoggedIn
+  pure ()
+handleNewThread _ _ = do 
+  outputWithPreamble "<h1>Error</h1><br />There was 
+       an error posting your thread."
+  pure ()
+\end{verbatim}
+}
+Once we have loaded the session data from the database, we then check whether the \texttt{UserID} variable is set, which demonstrates that a user has successfully logged into the system, and allows us to use the ID in subsequent computations. The database operation to insert the thread into the database is performed by the \texttt{threadInsert} function, which makes use of the \texttt{executeInsert} library function. This function abstracts over the low-level resource usage protocol, enabling for provably-correct database access without the excess boilerplate code. In addition, the function also returns the unique row ID of the last item which was inserted, which may be used in subsequent computations. In the case of the message board, we use this to associate the first post of the thread with the thread being inserted.
+{\small
+\begin{verbatim}
+threadInsert : Int -> 
+               String -> 
+               String -> 
+               Eff IO [SQLITE ()] Bool
+threadInsert uid title content = do
+  let query = "INSERT INTO `Threads` 
+    (`UserID`, `Title`) VALUES (?, ?)"
+  insert_res <- (executeInsert DB_NAME query 
+    [(1, DBInt uid), (2, DBText title)]
+  case insert_res of
+    Left err => pure False
+    Right thread_id => postInsert uid thread_id content
+\end{verbatim}
+}
+\subsection{Listing Threads}
+Listing the threads in the database is achieved through the use of the \texttt{executeSelect} library function, which in turn returns either a \texttt{ResultSet} or an error. 
+{\small
+\begin{verbatim}
+getThreads : Eff IO [SQLITE ()] (Either String ResultSet)
+getThreads = executeSelect DB_NAME query [] collectThreadResults
+  where query = "SELECT `ThreadID`, `Title`, `UserID`, 
+    `Username` FROM `Threads` NATURAL JOIN `Users`"
+\end{verbatim}
+}
+Once the result set has been retrieved, we may iterate through the results and output them to the page, including a link to a page which shows the posts associated with the thread. Since we know the structure of the returned row from designing the query, we may pattern match on each returned row to make use of the returned values.
+{\small
+\begin{verbatim}
+traverseThreads : ResultSet -> 
+  Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+traverseThreads [] = pure ()
+traverseThreads (x::xs) = do traverseRow x
+                             traverseThreads xs
+  where traverseRow : List DBVal -> 
+           Eff IO [CGI (InitialisedCGI TaskRunning)] ()
+        traverseRow ((DBInt thread_id)::
+                     (DBText title)::
+                     (DBInt user_id)::
+                     (DBText username)::[]) =
+           (output \$ "<tr><td>
+            <a href=\"?action=showthread&thread_id=" ++ 
+            (show thread_id) ++ "\">" ++ 
+            title ++ "</a></td><td>" ++ 
+            username ++ "</td></tr>") 
+        traverseRow _ = pure ()
+\end{verbatim}
+}
+\subsection{Authentication}
+Once a user submits the login form, the associated handler queries the database to ascertain whether a user with the given username and password exists through a call to the \texttt{authUser} function. If so, then the session handler is invoked, and a session is initialised with the user ID retrieved from the database. The session ID is then set as a cookie using the CGI effect, so that it may be used in subsequent requests. Any failures, for example with creating a new session or querying the database, are reported to the user.
+{\small
+\begin{verbatim}
+handleLoginForm (Just name) (Just pwd) = do
+  auth_res <- lift' (authUser name pwd)
+  case auth_res of
+    Right (Just uid) => do
+      set_sess_res <- setSession uid
+      if set_sess_res then do
+        lift' (output \$ "Welcome, " ++ name)
+        pure ()
+      else do
+        lift' (output "Could not set session")
+        pure ()
+    Right Nothing => do
+      lift' (output "Invalid username or password")
+      pure ()
+    Left err => do
+      lift' (output \$ "Error: " ++ err)
+      pure ()
+\end{verbatim}}
+Implementations for the insertion and display of posts, alongside registration, are similar in form to those described above, and are as such omitted from this paper.
+
+Although we have described a relatively simple application, we have shown that through the use of embedded domain-specific languages, we may write verified code that fails to compile should resources be incorrectly accessed. Additionally, we have used the form handling mechanism to simply handle the arguments passed by the user. Importantly, we have shown that dependent types can be used to increase confidence in an (albeit simplified) real-world application, without requiring developers to supply proofs or indeed work explicitly with dependent types. 
+%-----------------------------
+%-----------------------------
+
 \section{Related Work}
+
+%-----------------------------
+%-----------------------------
+
 \section{Conclusions}
 Dependently-typed languages have, for a long time, remained relatively unused outside of academia. Advances in embedded domain-specific languages have allowed many of the advantages of such languages, including the additional guarantees given by the successful compilation of a program (assuming the use of specific enough tyeps) to be adopted without the additional proofs traditionally required by users of such languages.
 
@@ -660,7 +826,7 @@ Dependently-typed languages provide great promise for the construction of secure
 % Cryptography bindings would be really good.
 % Integration with a web server instead of doing everything over CGI
 % Improvements to form handling system
-
+% Less raw SQL, use get more type-safety by using more complex EDSLs for database access thus further minimising errors
 
 
 %\appendix
@@ -668,24 +834,28 @@ Dependently-typed languages provide great promise for the construction of secure
 
 %This is the text of the appendix, if you need one.
 
+%-----------------------------
+%-----------------------------
+
 \acks
 % SICSA / EPSRC (grant number?
 % #idris
 % Idris contributors, in particular Melissa for the SQLite bindings and whoever wrote Network.Cgi
 
 % We recommend abbrvnat bibliography style.
-
-\bibliographystyle{abbrvnat}
+% #firstworldanarchists
+\bibliographystyle{plainnat}
 
 % The bibliography should be embedded for final submission.
 
-\begin{thebibliography}{}
-\softraggedright
-
-\bibitem[Smith et~al.(2009)Smith, Jones]{smith02}
-P. Q. Smith, and X. Y. Jones. ...reference text...
-
-\end{thebibliography}
+\bibliography{refs}
+%\begin{thebibliography}{}
+%\softraggedright
+%
+%\bibitem[Smith et~al.(2009)Smith, Jones]{smith02}
+%P. Q. Smith, and X. Y. Jones. ...reference text...
+%
+%\end{thebibliography}
 
 
 \end{document}

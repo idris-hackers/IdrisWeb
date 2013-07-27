@@ -453,46 +453,6 @@ executeFail = do
   pure "Error executing statement"
 
 
-executeInsert' : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE (SQLiteRes ConnectionOpened)] (Either String Int) -- (Maybe Int)
-executeInsert' = do
- id_res <- nextRow 
- case id_res of
-   StepComplete => do
-     last_insert_id <- getColumnInt 0
-     finaliseStatement
-     Effects.pure $ Right last_insert_id
-   NoMoreRows => do finaliseStatement
-                    Effects.pure $ Left "Error getting insert ID! NoMoreRows"
-   StepFail => do finaliseStatement
-                  Effects.pure $ Left "Error getting insert ID! StepFail"
-
--- Execute an insert statement, get the last inserted row ID
--- TODO: Create a binding to the SQLITE API function, instead of getting
---       last row ID by a query
-executeInsert : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE (SQLiteRes ConnectionOpened)] (Either String Int)
-executeInsert = do
-  next_row_res <- nextRow
-  case next_row_res of
--- Error with executing insert statement
-    StepFail => do
-      finaliseStatement
-      Effects.pure $ Left "Error inserting! next_row_res executeFail"
-    _ => do
-      finaliseStatement
-      let insert_id_sql = "SELECT last_insert_rowid();"
-      sql_prep_res <- prepareStatement insert_id_sql
-      if sql_prep_res then do
-        startBind
-        finishBind
-        beginExecution 
-        executeInsert'
-      else do
-        startBind
-        finishBind
-        beginExecution
-        finaliseStatement
-        Effects.pure $ Left "Error inserting! StmtFail"
-
 multiBind' : List (Int, DBVal) -> Eff m [SQLITE (SQLiteRes PreparedStatementBinding)] ()
 multiBind' [] = Effects.pure ()
 multiBind' ((pos, (DBInt i)) :: xs) = do bindInt pos i
@@ -509,6 +469,66 @@ multiBind vals = do
   finishBind
 
 
+executeInsert' : EffM m [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Int) -- (Maybe Int)
+executeInsert' = do
+ id_res <- nextRow 
+ case id_res of
+   StepComplete => do
+     last_insert_id <- getColumnInt 0
+     finaliseStatement
+     closeDB
+     Effects.pure $ Right last_insert_id
+   NoMoreRows => do finaliseStatement
+                    closeDB
+                    Effects.pure $ Left "Error getting insert ID! NoMoreRows"
+   StepFail => do finaliseStatement
+                  closeDB
+                  Effects.pure $ Left "Error getting insert ID! StepFail"
+
+-- Execute an insert statement, get the last inserted row ID
+-- TODO: Create a binding to the SQLITE API function, instead of getting
+--       last row ID by a query
+executeInsert : String -> 
+                String -> 
+                List (Int, DBVal) -> 
+                Eff IO [SQLITE ()] (Either String Int)
+executeInsert db_name query bind_vals = do
+  db_conn <- openDB db_name
+  if db_conn then do
+    prep_res <- prepareStatement query
+    if prep_res then do 
+      bind_res <- multiBind bind_vals
+      if bind_res then do
+        beginExecution
+        next_row_res <- nextRow
+        case next_row_res of
+      -- Error with executing insert statement
+          StepFail => do
+            finaliseStatement
+            closeDB
+            Effects.pure $ Left "Error inserting! next_row_res executeFail"
+          _ => do
+            finaliseStatement
+            let insert_id_sql = "SELECT last_insert_rowid();"
+            sql_prep_res <- prepareStatement insert_id_sql
+            if sql_prep_res then do
+              startBind
+              finishBind
+              beginExecution 
+              executeInsert'
+            else do
+              err <- stmtFail
+              Effects.pure $ Left err
+      else do
+        err <- bindFail
+        Effects.pure $ Left err
+    else do
+      err <- stmtFail
+      Effects.pure $ Left err
+  else do
+    err <- connFail
+    Effects.pure $ Left err
+    
 collectResults : (Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal)) ->
                  Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] (Either String ResultSet)
 collectResults fn = do

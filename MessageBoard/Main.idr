@@ -144,38 +144,14 @@ showNewPostForm thread_id = do
 -- Thread Creation
 -----------
 
-irritating_inner_case_fix_threadinsert : Int -> String -> EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] Bool
-irritating_inner_case_fix_threadinsert uid content = do
-        thread_insert_res <- executeInsert 
-        case thread_insert_res of
-          Left err => do closeDB
-                         pure False
-          -- If the thread inserted correctly, insert the first post
-          -- Ideally, this would be a transaction, but it will do for now.
-          Right thread_id => do closeDB
-                                postInsert uid thread_id content
-                                pure True
-
 threadInsert : Int -> String -> String -> Eff IO [SQLITE ()] Bool
 threadInsert uid title content = do
-  open_db <- openDB DB_NAME
-  if open_db then do
-    let sql = "INSERT INTO `Threads` (`UserID`, `Title`) VALUES (?, ?)"
-    stmt_res <- prepareStatement sql
-    if stmt_res then do
-      startBind
-      bindInt 1 uid
-      bindText 2 title
-      bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        irritating_inner_case_fix_threadinsert uid content
-      else do bindFail
-              pure False
-    else do stmtFail
-            pure False
-  else do connFail
-          pure False
+  let query = "INSERT INTO `Threads` (`UserID`, `Title`) VALUES (?, ?)"
+  insert_res <- executeInsert DB_NAME query [(1, DBInt uid), (2, DBText title)]
+  case insert_res of
+    Left err => pure False
+    Right thread_id => postInsert uid thread_id content
+                          
 
 addNewThread : String -> String -> SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning),
                                                        SESSION (SessionRes SessionInitialised),
@@ -224,39 +200,17 @@ showNewThreadForm = do output htmlPreamble
 -- Registration
 -----------
 
-innerInsertCase : (Either String Int) -> Eff IO [SQLITE ()] (Either String ())
-innerInsertCase (Left err) = Effects.pure (Left err)
-innerInsertCase _ = Effects.pure (Right ())
-
 -- UP TO HERE
-insertUser : String -> String -> Eff IO [SQLITE ()] (Either String ())
-insertUser name pwd = do
-  conn <- openDB DB_NAME
-  if conn then do
-    let sql = "INSERT INTO `Users` (`Username`, `Password`) VALUES (?, ?)"
-    sql_prep_res <- prepareStatement sql
-    if sql_prep_res then do
-      startBind
-      bindText 1 name
-      bindText 2 pwd
-      bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        res <- executeInsert
-        closeDB
-        innerInsertCase res
-      else do
-        err <- bindFail
-        Effects.pure $ Left err 
-    else do
-      err <- stmtFail
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+insertUser : String -> String -> Eff IO [SQLITE ()] (Either String Int)
+insertUser name pwd = executeInsert DB_NAME query bind_vals
+  where query = "INSERT INTO `Users` (`Username`, `Password`) VALUES (?, ?)"
+        bind_vals = [(1, DBText name), (2, DBText pwd)]
+
 
 -- Fine up until here
-userExists' : StepResult -> EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String Bool)
+userExists' : StepResult -> 
+              EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] 
+              [SQLITE ()] (Either String Bool)
 userExists' next_row_res =
   case next_row_res of
     StepComplete => do
@@ -517,7 +471,6 @@ strToInt s = cast s
 
 handleRequest : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 handleRequest = do handler_set <- isHandlerSet
-                   -- A better way might be (ifHandlerSet ...)
                    if handler_set then do
                      lift' (handleForm handlers)
                      Effects.pure ()
