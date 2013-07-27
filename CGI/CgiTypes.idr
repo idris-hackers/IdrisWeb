@@ -215,7 +215,7 @@ using (G : List FormTy, E : List WebEffect)
                FnElem f xs -> FnElem f (x :: xs)
 
   findFn : Nat -> List (TTName, Binder TT) -> TT -> Tactic -- Nat is maximum search depth
-  findFn O ctxt goal = Refine "FnHere" `Seq` Solve 
+  findFn Z ctxt goal = Refine "FnHere" `Seq` Solve 
   findFn (S n) ctxt goal = GoalType "FnElem" 
             (Try (Refine "FnHere" `Seq` Solve)
                  (Refine "FnThere" `Seq` (Solve `Seq` findFn n ctxt goal)))
@@ -239,22 +239,22 @@ using (G : List FormTy, E : List WebEffect)
 
     AddSelectionBox : (label : String) ->
                       (fty : FormTy) ->
-                      (vals : Vect (interpFormTy fty) m) ->
-                      (names : Vect String m) ->
+                      (vals : Vect m (interpFormTy fty)) ->
+                      (names : Vect m String) ->
                       Form (FormRes G E) (FormRes (fty :: G) E) ()
 
     AddRadioGroup : (label : String) -> 
                     (fty : FormTy) ->
-                    (vals : Vect (interpFormTy fty) m) ->
-                    (names : Vect String m) ->
+                    (vals : Vect m (interpFormTy fty)) ->
+                    (names : Vect m String) ->
                     (default : Int) ->
                     Form (FormRes G E) (FormRes (fty :: G) E) ()
     
     AddCheckBoxes : (label : String) ->
                     (fty : FormTy) ->
-                    (vals : Vect (interpFormTy fty) m) ->
-                    (names : Vect String m) ->
-                    (checked_boxes : Vect Bool m) ->
+                    (vals : Vect m (interpFormTy fty)) ->
+                    (names : Vect m String) ->
+                    (checked_boxes : Vect m Bool) ->
                     Form (FormRes G E) (FormRes ((FormList fty) :: G) E) ()
 
     UseEffects : (effs : List WebEffect) ->
@@ -281,44 +281,31 @@ using (G : List FormTy, E : List WebEffect)
 
   addSelectionBox : String ->
                     (fty : FormTy) ->
-                    (vals : Vect (interpFormTy fty) j) ->
-                    (names : Vect String j) ->
+                    (vals : Vect j (interpFormTy fty)) ->
+                    (names : Vect j String) ->
                     EffM m [FORM (FormRes G E)] [FORM (FormRes (fty :: G) E)] ()
   addSelectionBox label ty vals names = (AddSelectionBox label ty vals names)
 
   addRadioGroup : String ->
                   (fty : FormTy) ->
-                  (vals : Vect (interpFormTy fty) j) ->
-                  (names : Vect String j) ->
+                  (vals : Vect j (interpFormTy fty)) ->
+                  (names : Vect j String) ->
                   (default : Int) ->
                   EffM m [FORM (FormRes G E)] [FORM (FormRes (fty :: G) E)] ()
   addRadioGroup label ty vals names default = (AddRadioGroup label ty vals names default)
 
   addCheckBoxes : (label : String) ->
                   (fty : FormTy) ->
-                  (vals : Vect (interpFormTy fty) j) ->
-                  (names : Vect String j) ->
-                  (checked_boxes : Vect Bool j) ->
+                  (vals : Vect j (interpFormTy fty)) ->
+                  (names : Vect j String) ->
+                  (checked_boxes : Vect j Bool) ->
                   EffM m [FORM (FormRes G E)] [FORM (FormRes ((FormList fty) :: G) E)] ()
   addCheckBoxes label ty vals names checked = (AddCheckBoxes label ty vals names checked) 
 
-
-{-
-  getString : (f : mkHandlerFn ((reverse G), E)) ->
-              (fs : HandlerList) -> 
-              {default tactics { applyTactic findFn 100; solve; }
-                prf : FnElem f fs} -> String
-  getString f fs {prf} = getString' f fs prf
--}
-
-
--- (ft ** (mkHandlerFn ft, String))
-  addSubmit : --(fn : (interpCheckedFnTy G E)) ->
-              (f :  mkHandlerFn ((reverse G), E)) ->
+  addSubmit : (f :  mkHandlerFn ((reverse G), E)) ->
               (fns : HandlerList) ->
               {default tactics { applyTactic findFn 100; solve; }
                 prf : FnElem f fns} ->
-            --  (prf : FnElem fn fns) ->
               EffM m [FORM (FormRes G E)] [FORM (FormRes [] [])] String
   addSubmit f handlers {prf} = (Submit f name)
     where name : String
@@ -412,9 +399,9 @@ CGI t = MkEff t Cgi
 
 CGIProg effs a = Eff IO (CGI (InitialisedCGI TaskRunning) :: effs) a
 
-interpFnTy : Vect FormTy n -> Type
+interpFnTy : Vect n FormTy -> Type
 interpFnTy tys = interpFnTy' (reverse tys)
-  where interpFnTy' : Vect FormTy n -> Type
+  where interpFnTy' : Vect n FormTy -> Type
         interpFnTy' [] = () -- TODO: should be form effect stuff here
         interpFnTy' (x :: xs) = interpFormTy x -> interpFnTy' xs
 

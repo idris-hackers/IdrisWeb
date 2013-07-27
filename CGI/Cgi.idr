@@ -42,18 +42,18 @@ serialiseSubmit name tys effs = "<input type=\"hidden\" name=\"handler\" value=\
         serialised_effs = foldr (\eff, str => str ++ (show eff) ++ "-") "" (reverse effs)
 
 
-val_opts : (fty : FormTy) -> (Vect (interpFormTy fty) n) -> Vect String n -> String
+val_opts : (fty : FormTy) -> (Vect n (interpFormTy fty)) -> Vect n String -> String
 val_opts fty [] [] = ""
 val_opts fty (val :: vals) (name :: names) = "<option value=\"" ++ (showFormVal fty val) ++ "\">" 
                                              ++ name ++ "</option>\n" ++ (val_opts fty vals names)
 -- = foldr (\val, b => ("<option value=\"" ++ (showFormVal val) ++ "\">" ++ )
  
-makeSelectBox : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> String 
+makeSelectBox : String -> (fty : FormTy) -> (Vect n (interpFormTy fty)) -> (Vect n String) -> String 
 makeSelectBox name fty vals val_names = select ++ (val_opts fty vals val_names) ++ "</select><br />"
   where select = "<select name=\"" ++ name ++ "\">\n"
       
 -- TODO: The Int thing is pretty hacky, fix
-makeRadioGroup : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> Int -> String
+makeRadioGroup : String -> (fty : FormTy) -> (Vect n (interpFormTy fty)) -> (Vect n String) -> Int -> String
 makeRadioGroup _ _ [] [] _ = ""
 makeRadioGroup name fty (val :: vals) (val_name :: val_names) k =  "<input type=\"radio\" name=\"" ++ 
                                                                    name ++ 
@@ -63,7 +63,7 @@ makeRadioGroup name fty (val :: vals) (val_name :: val_names) k =  "<input type=
                                                                    val_name ++ "<br />" ++ 
                                                                    makeRadioGroup name fty vals val_names (k - 1)
                                                                    
-makeCheckBoxes : String -> (fty : FormTy) -> (Vect (interpFormTy fty) n) -> (Vect String n) -> (Vect Bool n) -> String
+makeCheckBoxes : String -> (fty : FormTy) -> (Vect n (interpFormTy fty)) -> (Vect n String) -> (Vect n Bool) -> String
 makeCheckBoxes _ _ [] [] _ = ""
 makeCheckBoxes name fty (val :: vals) (val_name :: val_names) (is_checked :: checklist) =  
                                                                    "<input type=\"checkbox\" name=\"" ++ 
@@ -83,7 +83,7 @@ getDefValStr ty Nothing = ""
 instance Handler Form m where
 -- Submit
   handle (FR len tys effs ser_str) (Submit fn name) k = 
-    k (FR O [] [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs) ++ "</td></tr></table>")
+    k (FR Z [] [] ser_str) (ser_str ++ "<tr><td></td><td>" ++ (serialiseSubmit name tys effs) ++ "</td></tr></table>")
 -- Text box
   handle (FR len tys effs ser_str) (AddTextBox label fty def_val) k = 
     k (FR (S len) (fty :: tys) 
@@ -266,7 +266,7 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
 
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
 mkForm : String -> String -> UserForm -> SerialisedForm
-mkForm name action frm = runPure [FR O [] [] ("<table><form name=\"" ++ name ++ 
+mkForm name action frm = runPure [FR Z [] [] ("<table><form name=\"" ++ name ++ 
                          "\" action=\"" ++ action ++ "\" method=\"post\">\n")] frm
 
 
