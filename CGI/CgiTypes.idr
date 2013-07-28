@@ -260,8 +260,7 @@ using (G : List FormTy, E : List WebEffect)
     UseEffects : (effs : List WebEffect) ->
                  Form (FormRes G E) (FormRes G effs) ()
 
-    Submit : -- (interpCheckedFnTy G E) -> 
-             (mkHandlerFn ((reverse G), E)) ->
+    Submit : (mkHandlerFn ((reverse G), E)) ->
              String -> 
              Form (FormRes G E) (FormRes [] []) String
 
