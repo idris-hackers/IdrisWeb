@@ -13,10 +13,10 @@
 
 // Initialises the libgcrypt library.
 // A required version may be specified: if this is
-// NULL, then GCRYPT_VERSION will be used instead.
+// the empty string, then GCRYPT_VERSION will be used instead.
 const char* idris_gcry_init(const char* version) {
     const char* ret;
-    if (version != NULL) {
+    if (strlen(version) >= 0) {
         ret = gcry_check_version(version);
     } else {
         ret = gcry_check_version(GCRYPT_VERSION);
@@ -114,7 +114,7 @@ char* idris_hash_string(void* context, char* str, int algorithm_key) {
     return str_output;
 }
 
-
+/*
 int main(int argc, char** argv) {
     if (argc < 2) {
         printf("Usage: thing [arg]");
@@ -133,3 +133,4 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Failed to initialise");
     }
 }
+*/

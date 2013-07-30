@@ -16,6 +16,7 @@ gcry_error_t idris_gcry_enable_algorithm(void* context, int algorithm_key);
 void idris_gcry_dispose_md(void* context);
 void idris_gcry_reset_md(void* context);
 char* idris_hash_string(void* context, char* str, int algorithm_key);
+void idris_gcry_dispose_res(void* gcry_res_struct);
 
 
 

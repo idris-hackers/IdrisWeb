@@ -72,11 +72,11 @@
 \maketitle
 
 \begin{abstract}
-Dependently-typed languages allow types to be used to impose arbitrarily-specific constraints on programs, in turn allowing easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker and additional proofs may have to be specified by a user.
+Dependently-typed languages allow for much expressive types to be used within programs in turn allowing easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker and additional proofs may have to be specified by a user.
 
-Research into embedded domain-specific languages attempt to address this problem by introducing a layer of abstraction over more specific underlying types, allowing domain-specific code to be written in high-level languages which use dependent types to enforce certain invariants without additional proof obligations. 
+Embedded domain-specific languages (EDSLs) address this problem by introducing a layer of abstraction over more specific underlying types, allowing domain-specific code to be written in high-level languages which use dependent types to enforce certain invariants without additional proof obligations. 
 
-In this paper, we apply this technique to web programming, and show that embedded domain-specific languages can be constructed to enforce resource usage protocols associated with common web operations such as CGI, database access and session handling. Additionally, we show that this technique may be employed to allow the creation and handling of web forms which retain type information, reducing the scope for programmer error and attacks such as SQL injection, which exploit the loss of type information.
+In this paper, we apply this technique to web programming, and introduce an EDSL to facilitate the creation and handling of web forms which retain type information, reducing the scope for programmer error and attacks such as SQL injection. We also show how EDSLs may be constructed to enforce resource usage protocols associated with common web operations such as CGI, database access and session handling. 
 \end{abstract}
 
 %\category{CR-number}{subcategory}{third-level}
@@ -90,7 +90,7 @@ In this paper, we apply this technique to web programming, and show that embedde
 %keyword1, keyword2
 
 \section{Introduction}
-Web applications, whilst ubiquitous, are also prone to incorrect construction and security exploits. The majority of web applications are written in dynamically-checked scripting languages \cite{}, which allow rapid development. A significant drawback, however, is that such languages do not provide  the same static guarantees about runtime behaviour afforded by programs with more expressive, static type systems, instead relying on extensive unit testing to ensure correctness and security. 
+Web applications, whilst ubiquitous, are also prone to incorrect construction and security exploits such as SQL injection or cross-site scripting. Many web applications are written in dynamically-checked scripting languages \cite{}, which allow rapid development. A significant drawback, however, is that such languages do not provide  the same static guarantees about runtime behaviour afforded by programs with more expressive, static type systems, instead relying on extensive unit testing to ensure correctness and security. 
 
 %%------- EXAMPLE
 Allow us to consider a simple, traditional database access routine, written in PHP, where we wish to obtain the name and address of every employee working in a given department, \texttt{\$dept}. We firstly construct an object representing a database connection, where the arguments are the database host, user, password and name respectively:
@@ -155,15 +155,15 @@ This complexity can be ameliorated through the use of \textit{embedded domain-sp
 \idris{} \cite{brady2011idris} is a language with full dependent types, and extensive support for embedded domain-specific languages through ad-hoc syntax overloading and syntax macros. Through the use of \idris{}, and the \texttt{Effects} framework \cite{brady:effects}, we present a dependently-typed web framework, which allows for the construction of programs with additional guarantees about correctness and security, whilst minimising the increase in development complexity. 
 
 \subsection{Contributions}
-The primary contribution of this paper is the application of previous work to show that dependent types may be used to provide stronger static guarantees about the correctness and security of web applications, whilst minimising additional overhead. In particular:
+The primary contribution of this paper is the application of previous work to show that dependent types may be used to provide stronger static guarantees about the correctness and security of web applications, whilst minimising additional development complexity. In particular:
 
 \begin{itemize}
-\item Representations of CGI, SQLite and a simple session handler as \textit{algebraic effects}, allowing programs to be accepted only when they adhere to specific resource usage protocols.
 \item A form-handling mechanism, which preserves type information and therefore increases applications' resilience to attacks such as SQL injection.
+\item Representations of CGI, SQLite and a simple session handler as \textit{algebraic effects}, allowing programs to be accepted only when they adhere to specific resource usage protocols.
 \item A message board application making use of the framework, and showing that the framework may be used for practical applications.
 \end{itemize}
 
-We structure the remainder of this paper as follows. We provide a brief overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain how this may be used to ensure adherence to resource usage protocol for CGI, SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for type-safe form handling in Section ~\ref{form}; and discuss the larger example of a message board system making use of these components in Section ~\ref{messageboard}.
+We structure the remainder of this paper as follows. We provide a brief overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain how this may be used to ensure adherence to resource usage protocols for CGI, SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for type-safe form handling in Section ~\ref{form}; and discuss the larger example of a message board system making use of these components in Section ~\ref{messageboard}.
 
 The code used to implement the framework and all associated examples used in this paper is available online at \url{http://www.github.com/SimonJF/IdrisWeb}.
 % =================================================
@@ -211,7 +211,7 @@ Additionally, we define \textit{handlers}, which describe how each operation is 
 
 \section{Modelling resource usage protocols}
 \label{rup}
-In this section, we show how three such effects; CGI, SQLite and a simple session handler, may be implemented, and describe the benefits of developing programs using this technique over simply handling them in the IO context or as part of a monad transformer.
+In this section, we show how three such effects; CGI, database access and a simple session handler, may be implemented, and describe the benefits of developing programs using this technique over simply handling them in the IO context or as part of a monad transformer.
 
 % =================================================
 
@@ -245,11 +245,11 @@ In this section, we show how three such effects; CGI, SQLite and a simple sessio
 \label{fig:cgistates}
 \end{figure}
 
-CGI is used to invoke an application on a web server, making use of environment variables to convey information gained from an HTTP request and using standard output to communicate with the remote client. Importantly, HTTP headers must be correctly written to the user prior to any other output; failure to do so will result in an internal server error.
+CGI is used to invoke an application on a web server, making use of environment variables to convey information gained from an HTTP request and using standard output to communicate with the remote client. Importantly, HTTP headers must be correctly written to the browser prior to any other output; failure to do so will result in an internal server error.
 
-A previous implementation of CGI in \idris{} implemented CGI as an extension of monadic IO. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
+A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
 
-By modelling CGI as an algebraic effect, we may enforce a resource usage protocol which, even though the program may be running in an IO execution context, prevents arbitrary IO from being performed and therefore ensures that the headers are written correctly. In order to accomplish this, we define an effect, \texttt{Cgi}, and an associated resource, \texttt{InitialisedCGI}, which is parameterised over the current state, \texttt{CGIStep}. This resource describes the current state, alongside a \texttt{CGIInfo} record which contains information from the request. We represent an uninitialised CGI effect as the unit type, ().
+By modelling CGI as a resource-dependent algebraic effect, we may enforce a resource usage protocol which, even though the program may be running in an IO execution context, prevents arbitrary IO from being performed and therefore ensures that the headers are written correctly. In order to accomplish this, we define an effect, \texttt{Cgi}, and an associated resource, \texttt{InitialisedCGI}, which is parameterised over the current state, \texttt{CGIStep}. This resource describes the current state, alongside a \texttt{CGIInfo} record which contains information from the request. We represent an uninitialised CGI process as the unit type, ().
 {\small
 \begin{verbatim}
 data CGIStep = Initialised 
@@ -262,9 +262,9 @@ data InitialisedCGI : CGIStep -> Type where
   ICgi : CGIInfo -> InitialisedCGI s
 \end{verbatim}
 }
-Figure ~\ref{fig:cgistates} shows the states through which the CGI program progresses. Each operation performed in an effectful program requires the resource to be of a certain type, and the completion of the operation may alter the resource.
+Figure ~\ref{fig:cgistates} shows the states through which the CGI program progresses. Each operation performed in an effectful program requires the resource to be of a certain type, and the completion of the operation may alter the type or value of the resource.
 
-Upon creation, the CGI application is uninitialised, meaning that the environment variables and request have not been retrieved. The only operation that can be performed in this state is initialisation: by calling \texttt{initalise}, a CGIInfo record is populated, and the state transitions to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the \texttt{Cgi} effect, and involves transitioning from the uninitialised state to the initialised state.
+Upon creation, the CGI application is uninitialised, meaning that the environment variables and request have not been retrieved. The only operation that can be performed in this state is initialisation: by calling \texttt{initialise}, a CGIInfo record is populated, and the state transitions to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the \texttt{Cgi} effect, and involves transitioning from the uninitialised state to the initialised state.
 
 {\small
 \begin{verbatim}
@@ -294,7 +294,7 @@ User code executes in the \texttt{TaskRunning} state. Several operations, such a
 
 After the user code has finished execution, control returns to the library code. At this point, the state transitions to TaskCompleted, the headers are written, and the headers are output to the request. Finally, the headers and content are written which completes the process. Since we parameterise the resource over a state, we may ensure that certain operations only happen in a particular prescribed order.
 
-In order to make use of the CGI framework, users specify a function of the following type:
+In \idris{}, types are first-class, meaning that they may be treated like other terms in computations. We may therefore define the following type synonym, which we may use in order to make use of the CGI framework: 
 {\small
 \begin{verbatim}
 CGIProg : List EFFECT -> Type -> Type
@@ -304,9 +304,21 @@ CGIProg effs a =
 }
 This is then passed, along with initial values for other effects that the user may wish to use, to the runAction function, which invokes the RunAction operation and executes the user-specified action.
 
+A simple ``Hello, world!'' program would be defined as follows:
+
+{\small
+\begin{verbatim}
+sayHello : CGIProg [] ()
+sayHello = output "Hello, world!"
+
+main : IO ()
+main = do runAction [initCGIState] sayHello
+          pure ()
+\end{verbatim}
+}
 % =================================================
 
-\subsection{SQLite}
+\subsection{Database access with SQLite}
 
 %TODO: Fix up the labels
 \begin{figure}[htpb!]
@@ -340,17 +352,17 @@ This is then passed, along with initial values for other effects that the user m
             edge[stateEdge, loop left]   node[edgeLabel, text width=2cm, xshift=2em] {\texttt{nextRow, reset}} (B);
 \end{tikzpicture}
 }
-\caption{SQLite Resource Usage Protocol}
+\caption{Database Resource Usage Protocol}
 \label{fig:sqlitestates}
 \end{figure}
 
 
-SQLite\footnote{\texttt{http://www.sqlite.org}} is a lightweight SQL database engine often used as simple, structured storage for larger applications. We make use of SQLite due to its simplicity, although we envisage that these concepts would be applicable to more complex database management systems. Access to the SQLite library is provided through the use of the \idris{} foreign function interface \cite{brady2011idris}, which is beyond the scope of this paper.
+SQLite\footnote{\texttt{http://www.sqlite.org}} is a lightweight SQL database engine often used as simple, structured storage for larger applications. We make use of SQLite due to its simplicity, although we envisage that these concepts would be applicable to more complex database management systems. 
 
-The creation, preparation and execution of SQL queries has a very specific usage protocol, with several possible points of failure. Failure is handled in traditional web applications by the generation of exceptions, which may be handled in the program.
+The creation, preparation and execution of SQL queries has a specific usage protocol, with several possible points of failure. Failure is handled in traditional web applications by the generation of exceptions, which may be handled in the program.
 Handling such exceptions is often optional, however, and in some cases unhandled errors may cause a deployed web application to display an error to the user. Such errors can be used to determine the structure of an insecure SQL query, and are often used by attackers to determine attack vectors for SQL injection attacks.
 
-Figure ~\ref{fig:sqlitestates} shows the resource usage protocol for the SQLite library. There are three main phases involved in the usage of the SQLite effect: connection to the database, preparation of a query, and execution of the query. This is reflected in the resource associated with the SQLite effect, which again is parameterised by the current state.
+Figure ~\ref{fig:sqlitestates} shows a resource usage protocol for database access, which we have implemented for the SQLite library. There are three main phases involved in the usage of the SQLite protocol: connection to the database, preparation of a query, and execution of the query. This is reflected in the associated resource, which again is parameterised by the current protocol state.
 {\small
 \begin{verbatim}
 data SQLiteRes : Step -> Type where
@@ -368,10 +380,10 @@ data StmtPointer = ValidStmt Ptr
                  | InvalidStmt 
 \end{verbatim}
 }
-If a failure happens at any point during the computation, the resource is updated to reflect the failure. At this point, no further side-effecting requests are made to the underlying SQLite library, in order to ensure safety. The \texttt{connFail}, \texttt{stmtFail}, \texttt{bindFail} and \texttt{executeFail} utility functions allow for failures, once detected, to be handled by executing the appropriate sequence of state transition functions to dispose of any open resources and return to the initial state. 
+If a failure happens at any point during the computation, the resource is updated to reflect the failure. At this point, no further side-effecting requests are made to the underlying SQLite library, in order to ensure safety. The \texttt{connFail}, \texttt{stmtFail}, \texttt{bindFail} and \texttt{executeFail} utility functions allow for failures, once detected, to be handled by executing the appropriate sequence of state transition functions to dispose of any open resources and return to the initial protocol state. 
 
 %Queries are evaluated through one or more calls to the \texttt{nextRow} function, which either executes an update statement or returns the next row of a result set. 
-SQL queries are evaluated in SQLite upon a call to the library function \texttt{sqlite3\_step()}. In the case that a statement returns a result set, each subsequent call retrieves another row for processing using a column access function. Once all rows have been retrieved, the library returns \texttt{SQLITE\_DONE}, meaning that no further calls should be made without resetting the function. We encapsulate this requirement through the \texttt{StepResult} data type within the \texttt{ExecutingStmt} constructor. 
+SQL queries are evaluated in SQLite upon a call to the C library function \texttt{sqlite3\_step()}. In the case that a statement returns a result set, each subsequent call retrieves another row for processing using a column access function. Once all rows have been retrieved, the library returns \texttt{SQLITE\_DONE}, meaning that no further calls should be made without resetting the function. We encapsulate this requirement through the \texttt{StepResult} data type within the \texttt{ExecutingStmt} constructor. 
 {\small
 \begin{verbatim}
 data StepResult = Unstarted
@@ -380,7 +392,7 @@ data StepResult = Unstarted
                 | NoMoreRows
 \end{verbatim}
 }
-Each call to \texttt{nextRow}, which is a wrapper around the underlying \texttt{sqlite3\_step()} function, returns a result of type \texttt{StepResult}, which is then reflected in the resource. Calls to \texttt{sqlite3\_step()} are only executed if the previous \texttt{StepResult} is either \texttt{Unstarted} or \texttt{StepComplete}. We may therefore statically guarantee that only calls that will return a valid result are executed. 
+Each call to \texttt{nextRow}, which is a wrapper around the underlying \texttt{sqlite3\_step()} C library function, returns a result of type \texttt{StepResult}, which is then reflected in the resource. Calls to \texttt{sqlite3\_step()} are only executed if the previous \texttt{StepResult} is either \texttt{Unstarted} or \texttt{StepComplete}. We may therefore statically guarantee that only calls that will return a valid result are executed. 
 
 By incorporating pointers to open connections and prepared statements into the resource associated with the effect, we introduce a further layer of abstraction, in order to hide implementation details from the developer and encourage cleaner, less error-prone code. 
 
@@ -505,7 +517,7 @@ We implement this by having a SQLite database, containing two tables: \texttt{se
 \label{fig:sessionstates}
 \end{figure}
 
-Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated with the session handler. In this application, there exist two states: \texttt{SessionUninitialised}, in which the user may load or create a new session, and \texttt{SessionInitialised}, in which the user may update the representation of the session in memory, serialise the session and write it to the database, or delete the session and invalidate the user's session key. The introduction of these two states ensures that changes are explicitly either written or discarded, eliminating the possibility of a developer updating the session but neglecting to commit it to persistent storage.
+Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated with the session handler. In this application, there exist two states: \texttt{SessionUninitialised}, in which the user may load or create a new session, and \texttt{SessionInitialised}, in which the user may update the representation of the session in memory, serialise the session and write it to the database, or delete the session and invalidate the user's session key. The introduction of these two states ensures that changes are explicitly either written or discarded, eliminating the possibility of a developer updating the session but neglecting to commit it to persistent storage. This, of course, is under the assumption that the process exits cleanly: we attempt to facilitate this by writing total functions where possible.
 
 Much like the SQLite effect, we encapsulate failure by reflecting it in the resource associated with the effect. 
 {\small
@@ -526,7 +538,7 @@ The \texttt{SessionRes} data type is parameterised over the current state, which
 
 \section{Type-aware form handling}
 \label{form}
-Programming web applications often involves processing user data, which may then be used in further effectuful computations. Data submitted using a form is transmitted over the internet as a string as part of an HTTP request, which traditionally involves losing associated type information. 
+Programming web applications often involves processing user data, which may then be used in further effectful computations. Data submitted using a form is transmitted over the internet as a string as part of an HTTP request, which traditionally involves losing associated type information.
 
 This can in turn increase lead to risks; developers may assume that a data is of a certain type, and therefore discount the possibility that it may have been modified by an attacker. One example would be the traversal of paginated data, in which a form is used to make a request to retrieve the next page of data. This may involve sending an integer detailing the current page, which could be used in a query such as:
 
@@ -550,7 +562,7 @@ data FormTy = FormString
             | FormList FormTy 
 \end{verbatim}
 }
-In \idris{}, types are first-class, meaning that they may be treated like other terms in computations. We use this to convert between abstract and concrete representations of allowed form types:
+Recalling that types in \idris{} are first-class, we may use this to convert between abstract and concrete representations of allowed form types:
 {\small
 \begin{verbatim}
 interpFormTy : FormTy -> Type
@@ -562,7 +574,7 @@ interpFormTy (FormList a) = List (interpFormTy a)
 \end{verbatim}
 }
 %
-In order to specify a form, we once again make use of the \texttt{Effects} library in order to create a resource-aware EDSL. By recording the type of each form element as it is added in the type of the form, we may statically ensure that the user-supplied handler function is of the correct type to handle the data supplied by the form: the specification of an incompatible handler will result in a compile-time type error.
+In order to specify a form, we once again use \texttt{Effects}. By recording the type of each form element as it is added in the type of the form, we may statically ensure that the user-supplied handler function is of the correct type to handle the data supplied by the form: the specification of an incompatible handler will result in a compile-time type error.
 
 \idris{} allows for implicit arguments to be bound across a block of code through \texttt{using} notation. We may therefore parameterise the EDSL over the types associated with each form element, and the effects required by the handler function.
 
@@ -640,7 +652,7 @@ In order to associate a handler with a form, we may call the \texttt{addSubmit} 
           name = getString' f handlers prf          
 \end{verbatim}
 }
-Let us look at each aspect of this function in turn. Firstly, the \texttt{mkHandlerFn} function calculates the required type of the handler function from the list of types associated with the form elements, and the effects we specified with the \texttt{useEffects} function. Note that since we prepend types to the list of \texttt{FormTy}s as opposed to appending them, we must reverse the list.
+Let us look at each aspect of this function in turn. Firstly, the \texttt{mkHandlerFn} function calculates the required type of the handler function from the list of types associated with the form elements, and the effects we specified with \texttt{useEffects}. Note that since we prepend types to the list of \texttt{FormTy}s as opposed to appending them, we must reverse the list.
 {\small
 \begin{verbatim}
 MkHandlerFnTy : Type
@@ -655,7 +667,7 @@ mkHandlerFn : MkHandlerFnTy -> Type
 mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
 \end{verbatim}
 }
-The \texttt{mkHandlerFn} function takes as its argument a tuple describing the arguments and web effects available to the function. When constructing the function type, we encase all arguments withing \texttt{Maybe} type, in order to handle failure should the supplied data fail to parse to the specified type. We may then extract the information through pattern matching.
+The \texttt{mkHandlerFn} function takes a tuple describing the arguments and web effects available to the handler function. When constructing the function type, we encase all arguments withing \texttt{Maybe} type, in order to handle failure should the supplied data fail to parse to the specified type.
 
 To store a reference to a handler function, we use the \texttt{HandlerFn} type:
 {\small
@@ -719,7 +731,7 @@ We may then parse the arguments according to the types specified by the handler 
 
 \section{Extended Example: Message Board}
 \label{messageboard}
-Using these components, we may now consider a larger example of a message board which allowsusers to register, log in, view and create threads, and list and create new posts in threads. 
+Using these components, we may now consider a larger example of a message board which allows users to register, log in, view and create threads, and list and create new posts in threads. 
 
 Firstly, we create a database schema in which to record information stored by the message board. We create three tables: \texttt{Users}, which contains a unique User ID, usernames and passwords; \texttt{Threads}, which contains a unique thread ID, a title, and the ID of the user who created the thread; and \texttt{Posts}, which contains a unique post ID, the ID of the thread to which each post belongs, the content of the post, and the ID of the user that created the post.
 
@@ -736,7 +748,7 @@ main = do (runCGI [initCGIState,
           pure ()
 \end{verbatim}
 }
-The \texttt{handleRequest} function checks to see whether the CGI request must handle previously-submitted form data, via the \texttt{isHandlerSet} function. If so, then the form handling routine is called, which handles the form data as described in Section ~\ref{formhandling}. If not, then the \texttt{handleNonFormRequest} function is called, which inspects the GET variables in order to display the correct page.
+We specify a function, \texttt{handleRequest}, which firstly calls \texttt{isHandlerSet} to determine whether submitted form data must be handled. If so, then the form handling routine is called, which executes the corresponding handler function as specified in Section ~\ref{formhandling}. If not, then the \texttt{handleNonFormRequest} function is called, which inspects the GET variables in order to display the correct page.
 {\small
 \begin{verbatim}
 handleRequest : CGIProg [SESSION 
@@ -908,6 +920,7 @@ Dependently-typed languages provide great promise for the construction of secure
 %-----------------------------
 
 \acks
+This work has been supported by the Scottish Informatics and Computer Science Alliance (SICSA) and the EPSRC. The authors would like to thank contributors to the \idris{} language, especially the authors of the original \texttt{Network.Cgi} and \texttt{SQLite} libraries.
 % SICSA / EPSRC (grant number?
 % #idris
 % Idris contributors, in particular Melissa for the SQLite bindings and whoever wrote Network.Cgi

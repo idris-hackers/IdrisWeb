@@ -23,13 +23,16 @@ data GCryptRes : Step -> Type where
   -- IOExcept would avoid the need for this...
   LibInitFailed : GCryptHashRes s
   HashContextInitialised : Ptr -> GCryptHashRes s
+  HashContextInvalid : GCryptHashRes s
 
 
 data GCrypt : Effect where
-  InitialiseGCrypt : Maybe String -> GCrypt () (GCryptRes GCryptLibInitialised) (Maybe String)
+  -- Currently, marshalling a null pointer to a string results in a segfault.
+  -- For now, we'll treat this as a bool...
+  InitialiseGCrypt : Maybe String -> GCrypt () (GCryptRes GCryptLibInitialised) (Bool) -- (Maybe String)
   InitialiseHashContext : HashAlgorithm -> List HashFlag -> GCrypt (GCryptRes GCryptLibInitialised) 
                                                                    (GCryptRes GCryptMDInitialised) 
-                                                                   (GCryptResult)
+                                                                   (Bool)
 {- Not really needed.
   FinaliseHashContext : GCrypt (GCryptRes GCryptMDInitialised)
                                (GCryptRes GCryptMDFinalised)
@@ -54,13 +57,13 @@ GCRYPT : Type -> EFFECT
 GCRYPT t = MkEff t GCrypt
 
 {- Functions -}
-initialiseGCrypt : Maybe String -> EffM IO [GCRYPT ()] [GCRYPT (GCryptRes GCryptLibInitialised)] (Maybe String)
+initialiseGCrypt : Maybe String -> EffM IO [GCRYPT ()] [GCRYPT (GCryptRes GCryptLibInitialised)] Bool -- (Maybe String)
 initialiseGCrypt ver = (InitialiseGCrypt ver)
 
 -- Initialises a hash context within the library, given an algorithm and a list of flags.
 initialiseHashContext : HashAlgorithm -> List HashFlag -> EffM [GCRYPT (GCryptRes GCryptLibInitialised)]
                                                                [GCRYPT (GCryptRes GCryptMDInitialised)]
-                                                               (GCryptResult)
+                                                               (Bool)
 initialiseHashContext alg flags = (InitialiseHashContext alg flags)
 
 -- Disposes of a hash context, freeing associated resources
@@ -82,3 +85,50 @@ getStringMessageDigest : String -> EffM IO [GCRYPT (GCryptRes GCryptMDInitialise
                                            (String)
 getStringMessageDigest str = (GetStringMessageDigest str)
 
+
+cleanupResStruct : Ptr -> IO ()
+cleanupResStruct ptr = do
+  res <- mkForeign (FFun "idris_gcry_dispose_res" [FPtr] FUnit) ptr
+  pure ()
+
+instance Handler GCrypt IO where
+  handle () (InitialiseGCrypt (Just ver)) k = do 
+    res <- mkForeign (FFun "idris_gcry_init" [FString] FPtr) ver
+    null_res <- isNull res
+    if null_res then
+      k (LibInitFailed) False
+    else
+      k (LibInitialised) True
+    
+  handle () (InitialiseGCrypt Nothing) k = do
+    res <- mkForeign (FFun "idris_gcry_init" [FString] FPtr) ""
+    null_res <- isNull res
+    if null_res then
+      k (LibInitFailed) False
+    else
+      k (LibInitialised) True
+
+  handle (LibInitialised) (InitialiseHashContext alg flags) = do
+    -- TODO: We're ignoring flags for now
+    res <- mkForeign (FFun "idris_gcry_init_md" [FInt, FInt] FPtr) alg 0
+    -- Res is a structure demonstrating the result code and a pointer
+    -- which may, so long as the call was correct, point to a hashing
+    -- context. The intermediate library will not return NULL here.
+    err <- mkForeign (FFun "idris_gcry_get_struct_err" [FPtr] FInt) res
+    -- Once again, I'm quickly hacking around this. The error value returned
+    -- by LibGCrypt consists of two distinct parts: the error code, and the
+    -- error location. If, however, the operation was successful, then the
+    -- whole thing will be 0.
+    -- Expect this interface to change when I do it properly.
+    if err == 0 then do
+      -- Success
+      context <- mkForeign (FFun "idris_gcry_get_struct_data" [FPtr] FPtr) res
+      -- Prudent to do a null check in case something's gone wrong
+      context_null <- isNull context
+      cleanupResStruct res
+      if context_null then do
+        k (HashContextInvalid) Nothing
+      else
+        k (HashContextInitialised context) 
+    else
+      k (HashContextInvalid) Nothing
