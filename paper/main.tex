@@ -35,10 +35,12 @@
 \usepackage{tikz}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
+\usepackage{fancyvrb}
 \usetikzlibrary{arrows,automata}
 \WarningsOff
 
 \begin{document}
+\fvset{fontsize=\small}
 \newcommand{\idris}{\textsc{Idris}}
 \special{papersize=8.5in,11in}
 \setlength{\pdfpageheight}{\paperheight}
@@ -90,61 +92,51 @@ In this paper, we apply this technique to web programming, and introduce an EDSL
 %keyword1, keyword2
 
 \section{Introduction}
-Web applications, whilst ubiquitous, are also prone to incorrect construction and security exploits such as SQL injection or cross-site scripting. Many web applications are written in dynamically-checked scripting languages \cite{}, which allow rapid development. A significant drawback, however, is that such languages do not provide  the same static guarantees about runtime behaviour afforded by programs with more expressive, static type systems, instead relying on extensive unit testing to ensure correctness and security. 
+Web applications, whilst ubiquitous, are also prone to incorrect construction and security exploits such as SQL injection \cite{owasp:sqli} or cross-site scripting \cite{owasp:xss}. Security breaches using such exploits are far-reaching, and high profile cases involve large corporations such as Sony, who suffered a well-publicised and extremely costly SQL Injection breach in 2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012 \cite{imperva:yahoo}. 
+
+Many web applications are written in dynamically-checked scripting languages such as PHP, Ruby or Python, which facilitate rapid development \cite{w3techs:webpls}. A significant drawback, however, is that such languages do not provide  the same static guarantees about runtime behaviour afforded by programs with more expressive, static type systems, instead relying on extensive unit testing to ensure correctness and security. 
 
 %%------- EXAMPLE
 Allow us to consider a simple, traditional database access routine, written in PHP, where we wish to obtain the name and address of every employee working in a given department, \texttt{\$dept}. We firstly construct an object representing a database connection, where the arguments are the database host, user, password and name respectively:
-
-{\small
-\begin{verbatim}
+%
+\begin{Verbatim}
 $conn = new mysqli("localhost", "username", 
                     "password", "db");
-\end{verbatim}
-}
-
+\end{Verbatim}
+%
 We must subsequently check to see if the connection was successful, and cease execution of the database routine if so. Of course, this check is optional, so it would be perfectly possible to omit the check: this would, however, cause problems with later execution steps.
-
-{\small
-\begin{verbatim}
+%
+\begin{Verbatim}
   if (mysqli_connect_errno()) {
       exit();
   }
-\end{verbatim}
-}
-
+\end{Verbatim}
+%
 We then create a prepared statement detailing our query, and bind the \texttt{`dept'} value:
-
-{\small
-\begin{verbatim}
+\begin{Verbatim}
   $stmt = $conn->prepare("SELECT `name`, `address` 
      FROM `staff` WHERE `dept` = ?);
-  $stmt->bind_param($dept);
-\end{verbatim}
-}
-
+  $stmt->bind_param('s', $dept);
+\end{Verbatim}
+%
 After the parameters have been bound, we must execute the statement, assign variables into which results will be stored, and fetch each row in turn. At this point, a developer may forget to execute the statement before beginning to fetch results or may have forgotten to bind the parameters to the statement:
-
-{\small
-\begin{verbatim}
+%
+\begin{Verbatim}
   $stmt->execute();
   $stmt->bind_result($name, $address);
-
   while ($stmt->fetch()) {
     printf("Name: %s, Age: %s", $name, $age);
   }
-\end{verbatim}
-}
-
+\end{Verbatim}
+%
 Finally, once the statement and connection are no longer needed, they should be closed in order to discard the associated resources:
-
-{\small
-\begin{verbatim}
+%
+\begin{Verbatim}
   $stmt->close();
   $conn->close();
-\end{verbatim}
-}
-
-Even in this small example, there exists a very specific resource usage protocol. Firstly, a connection to the database must be opened. The object-oriented style used in the example encapsulates this to an extent, as the object must be created in order for operations to be performed, however it is less obvious in a procedural version of the code. Secondly, a prepared statement is created, using the raw SQL and placeholders to which variables are later bound. The statement is then executed, and each row is retrieved from the database. Finally, the resources are freed. 
+\end{Verbatim}
+%
+Even in this small example, there exists a specific resource usage protocol. Firstly, a connection to the database must be opened. The object-oriented style used in the example encapsulates this to an extent, as the object must be created in order for operations to be performed, however it is less obvious in a procedural version of the code. Secondly, a prepared statement is created, using the raw SQL and placeholders to which variables are later bound. The statement is then executed, and each row is retrieved from the database. Finally, the resources are freed. 
 
 There is, however, no way to statically guarantee that this protocol is adhered to. A developer may, for example, accidentally close a statement whilst still retrieving rows, which would cause a runtime error. Similarly, a programmer may omit closing the statement or connection, which can lead to substantial problems such as handle leaks in longer-running server applications.
 
@@ -175,35 +167,29 @@ The code used to implement the framework and all associated examples used in thi
 
 An effect is represented as an instance of the \texttt{EFFECT} type. Such instances may be associated with a \textit{resource}, 
 Describing a program in the \texttt{Effects} library is achieved using the following data type:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 EffM : (m : Type -> Type) ->
        (es : List EFFECT) ->
        (es’ : List EFFECT) ->
        (a : Type) -> Type
-\end{verbatim}
-}
+\end{Verbatim}
 \texttt{EffM} is a type that is parameterised over an execution context (\texttt{m}), a list of effects that the program may use (\texttt{xs}), a list of effects at the end of the program's execution (\texttt{es'}), and a return type (\texttt{a}). The list of input types can be used to ensure that an operation may only be called when the program is in a particular state, and since the list of input effects may differ from the list of output effects, we may modify the resource associated with the state after each operation. This allows us to simply enforce a resource usage protocol, and deviation from this protocol will result in a compile-time error.
 
 Implementing a new effect involves creating a new algebraic data type, of kind \texttt{Effect}, which describes the available operations and how they modify the resource associated with the effect. Each operation consists of an initial resource \texttt{res}, the resource at the end of the operation \texttt{res'}, and the output type of the operation \texttt{t}.
-{\small
 %TODO: Execution
-\begin{verbatim}
+\begin{Verbatim}
 Effect : Type
 Effect = (res : Type) -> (res’ : Type) ->
          (t : Type) -> Type
-\end{verbatim}
-}
+\end{Verbatim}
 Operations are made available to users by writing functions with the corresponding \texttt{EffM} type, which may then be used to invoke the operation from within an effectful program.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 queryPostVar : 
  String -> 
  Eff m [CGI (InitialisedCGI TaskRunning)] 
    (Maybe String)
 queryPostVar query = (QueryPostVar query)
-\end{verbatim}
-}
+\end{Verbatim}
 Additionally, we define \textit{handlers}, which describe how each operation is interpreted in a given execution context. Finally, \texttt{Effect} instances are promoted to \texttt{EFFECT} instances through the use of the \texttt{MkEff} constructor, which is provided with the initial resource value.
 
 % =================================================
@@ -250,8 +236,7 @@ CGI is used to invoke an application on a web server, making use of environment 
 A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
 
 By modelling CGI as a resource-dependent algebraic effect, we may enforce a resource usage protocol which, even though the program may be running in an IO execution context, prevents arbitrary IO from being performed and therefore ensures that the headers are written correctly. In order to accomplish this, we define an effect, \texttt{Cgi}, and an associated resource, \texttt{InitialisedCGI}, which is parameterised over the current state, \texttt{CGIStep}. This resource describes the current state, alongside a \texttt{CGIInfo} record which contains information from the request. We represent an uninitialised CGI process as the unit type, ().
-{\small
-\begin{verbatim}
+\begin{Verbatim}[samepage]
 data CGIStep = Initialised 
              | TaskRunning 
              | TaskCompleted 
@@ -260,14 +245,12 @@ data CGIStep = Initialised
 
 data InitialisedCGI : CGIStep -> Type where
   ICgi : CGIInfo -> InitialisedCGI s
-\end{verbatim}
-}
+\end{Verbatim}
 Figure ~\ref{fig:cgistates} shows the states through which the CGI program progresses. Each operation performed in an effectful program requires the resource to be of a certain type, and the completion of the operation may alter the type or value of the resource.
 
 Upon creation, the CGI application is uninitialised, meaning that the environment variables and request have not been retrieved. The only operation that can be performed in this state is initialisation: by calling \texttt{initialise}, a CGIInfo record is populated, and the state transitions to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the \texttt{Cgi} effect, and involves transitioning from the uninitialised state to the initialised state.
 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 data Cgi : Effect where
     Init : Cgi () (InitialisedCGI Initialised) ()
     StartRun : Cgi (InitialisedCGI Initialised) 
@@ -286,8 +269,7 @@ data Cgi : Effect where
                        CGIProg effs a -> 
                        Cgi (InitialisedCGI TaskRunning) 
                            (InitialisedCGI TaskRunning) a
-\end{verbatim}
-}
+\end{Verbatim}
 Additional operations, including those to query POST and GET variables, are omitted in the interest of brevity.
 
 User code executes in the \texttt{TaskRunning} state. Several operations, such as querying the POST and GET variables, are available in this state, alongside functions to output data to the web page and append data to the response headers. It is important to note, that at this stage nothing is written to the page, with the \texttt{output} and \texttt{addHeader} functions instead modifying the CGIInfo record. This data may then be printed at the end of the program's execution, in accordance with the resource usage protocol.
@@ -295,27 +277,26 @@ User code executes in the \texttt{TaskRunning} state. Several operations, such a
 After the user code has finished execution, control returns to the library code. At this point, the state transitions to TaskCompleted, the headers are written, and the headers are output to the request. Finally, the headers and content are written which completes the process. Since we parameterise the resource over a state, we may ensure that certain operations only happen in a particular prescribed order.
 
 In \idris{}, types are first-class, meaning that they may be treated like other terms in computations. We may therefore define the following type synonym, which we may use in order to make use of the CGI framework: 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 CGIProg : List EFFECT -> Type -> Type
 CGIProg effs a = 
  Eff IO (CGI (InitialisedCGI TaskRunning) :: effs) a
-\end{verbatim}
-}
+\end{Verbatim}
 This is then passed, along with initial values for other effects that the user may wish to use, to the runAction function, which invokes the RunAction operation and executes the user-specified action.
 
 A simple ``Hello, world!'' program would be defined as follows:
 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
+import Cgi
+import Effects
+
 sayHello : CGIProg [] ()
 sayHello = output "Hello, world!"
 
 main : IO ()
 main = do runAction [initCGIState] sayHello
           pure ()
-\end{verbatim}
-}
+\end{Verbatim}
 % =================================================
 
 \subsection{Database access with SQLite}
@@ -362,9 +343,51 @@ SQLite\footnote{\texttt{http://www.sqlite.org}} is a lightweight SQL database en
 The creation, preparation and execution of SQL queries has a specific usage protocol, with several possible points of failure. Failure is handled in traditional web applications by the generation of exceptions, which may be handled in the program.
 Handling such exceptions is often optional, however, and in some cases unhandled errors may cause a deployed web application to display an error to the user. Such errors can be used to determine the structure of an insecure SQL query, and are often used by attackers to determine attack vectors for SQL injection attacks.
 
-Figure ~\ref{fig:sqlitestates} shows a resource usage protocol for database access, which we have implemented for the SQLite library. There are three main phases involved in the usage of the SQLite protocol: connection to the database, preparation of a query, and execution of the query. This is reflected in the associated resource, which again is parameterised by the current protocol state.
-{\small
-\begin{verbatim}
+Figure ~\ref{fig:sqlitestates} shows a resource usage protocol for database access, which we have implemented for the SQLite library. This is encapsulated by the \texttt{Sqlite} effect; we again omit some operations, such as those to bind and retrieve data types other than \texttt{String}, in the interest of brevity.
+
+\begin{Verbatim}[samepage]
+data Sqlite : Effect where
+  OpenDB : 
+    String -> 
+    Sqlite () 
+           (SQLiteRes ConnectionOpened) Bool
+  CloseDB : 
+    Sqlite (SQLiteRes ConnectionOpened) () Bool
+  PrepareStatement : 
+    String -> 
+    Sqlite (SQLiteRes ConnectionOpened) 
+           (SQLiteRes PreparedStatementOpen) Bool
+  StartBind : 
+    Sqlite (SQLiteRes PreparedStatementOpen) 
+           (SQLiteRes PreparedStatementBinding) ()
+  BindText : 
+    ArgPos -> String -> Int -> 
+    Sqlite (SQLiteRes PreparedStatementBinding) 
+           (SQLiteRes PreparedStatementBinding) 
+           Bool
+  FinishBind : 
+    Sqlite (SQLiteRes PreparedStatementBinding) 
+           (SQLiteRes PreparedStatementBound) 
+           Bool
+  ExecuteStatement : 
+    Sqlite (SQLiteRes PreparedStatementBound) 
+           (SQLiteRes PreparedStatementExecuting) ()
+  Finalise : 
+    Sqlite (SQLiteRes PreparedStatementExecuting) 
+           (SQLiteRes ConnectionOpened) 
+           Bool
+  GetColumnText : 
+    Int -> 
+    Sqlite (SQLiteRes PreparedStatementExecuting)
+           (SQLiteRes PreparedStatementExecuting)
+           String
+  RowStep : 
+    Sqlite (SQLiteRes PreparedStatementExecuting)
+           (SQLiteRes PreparedStatementExecuting)
+           StepResult
+\end{Verbatim}
+There are three main phases involved in the usage of the SQLite protocol: connection to the database, preparation of a query, and execution of the query. This is reflected in the associated resource \texttt{SQLiteRes}, which again is parameterised by the current protocol state.
+\begin{Verbatim}
 data SQLiteRes : Step -> Type where
   OpenConn : DBPointer -> SQLiteRes s
   OpenStmt : DBPointer -> StmtPointer -> SQLiteRes s
@@ -378,20 +401,17 @@ data DBPointer = ValidConn Ptr
 
 data StmtPointer = ValidStmt Ptr
                  | InvalidStmt 
-\end{verbatim}
-}
-If a failure happens at any point during the computation, the resource is updated to reflect the failure. At this point, no further side-effecting requests are made to the underlying SQLite library, in order to ensure safety. The \texttt{connFail}, \texttt{stmtFail}, \texttt{bindFail} and \texttt{executeFail} utility functions allow for failures, once detected, to be handled by executing the appropriate sequence of state transition functions to dispose of any open resources and return to the initial protocol state. 
+\end{Verbatim}
+If a failure happens at any point during the computation, the resource is updated to reflect the failure: if, for example, the library failed to create a connection to the database, the resource value would be updated to \texttt{OpenConn InvalidConn}. At this point, no further side-effecting requests are made to the underlying SQLite library, in order to ensure safety. The \texttt{connFail}, \texttt{stmtFail}, \texttt{bindFail} and \texttt{executeFail} utility functions allow for failures, once detected, to be handled by executing the appropriate sequence of state transition functions to dispose of any open resources and return to the initial protocol state. 
 
 %Queries are evaluated through one or more calls to the \texttt{nextRow} function, which either executes an update statement or returns the next row of a result set. 
 SQL queries are evaluated in SQLite upon a call to the C library function \texttt{sqlite3\_step()}. In the case that a statement returns a result set, each subsequent call retrieves another row for processing using a column access function. Once all rows have been retrieved, the library returns \texttt{SQLITE\_DONE}, meaning that no further calls should be made without resetting the function. We encapsulate this requirement through the \texttt{StepResult} data type within the \texttt{ExecutingStmt} constructor. 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 data StepResult = Unstarted
                 | StepFail
                 | StepComplete
                 | NoMoreRows
-\end{verbatim}
-}
+\end{Verbatim}
 Each call to \texttt{nextRow}, which is a wrapper around the underlying \texttt{sqlite3\_step()} C library function, returns a result of type \texttt{StepResult}, which is then reflected in the resource. Calls to \texttt{sqlite3\_step()} are only executed if the previous \texttt{StepResult} is either \texttt{Unstarted} or \texttt{StepComplete}. We may therefore statically guarantee that only calls that will return a valid result are executed. 
 
 By incorporating pointers to open connections and prepared statements into the resource associated with the effect, we introduce a further layer of abstraction, in order to hide implementation details from the developer and encourage cleaner, less error-prone code. 
@@ -400,15 +420,12 @@ By incorporating pointers to open connections and prepared statements into the r
 Programs making use of the DSL should look familiar to developers even without a background in functional programming. To demonstrate the functionality of the library, we return to the previous example of selecting the names and addresses of all staff working in a given department. Due to the fact that the \texttt{Effects} library overloads the bind operator, we may make use of \texttt{do}-notation, facilitating the usage of an imperative style.
 
 We define a function of type:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 String ->
 Eff IO [SQLITE ()] (Either String (List (String, String)))
-\end{verbatim}
-}
+\end{Verbatim}
 This means that the program will be run in the IO execution context, and must start and end with no active resources. The return type indicates that either a list of \text{(String, String)} pairs, representing names and addresses in the database, or an error will be returned. 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 testSelect : String -> Eff IO [SQLITE ()] 
              (Either String (List (String, Int)))
 testSelect dept = do
@@ -430,15 +447,13 @@ testSelect dept = do
             return $ Left err
   else do err <- connFail
           return $ Left err $
-\end{verbatim}
-}
+\end{Verbatim}
 The program initially attempts to open a connection to the \texttt{people.db} database. At this point, since the \texttt{OpenDB} operation has been invoked, the program transitions to the \texttt{ConnectionOpened} state. The \texttt{openDB} function returns a Boolean value indicating whether or not the operation is successful. If not, then the \texttt{connFail} function is called to generate an appropriate error and dispose of the resources, as shown in ~\ref{fig:sqlitestates}.
 
 A call to \texttt{prepareStatement} attempts to create a prepared statement, and a subsequent call to \texttt{beginExecution} allows data to be retrieved from the database.
 
 \texttt{CollectResults} is a simple function which makes a call to \texttt{nextRow} in order to make the next row of the result set available for processing, and uses the \texttt{getColumnText} and \texttt{getColumnInt} functions to retrieve the data from the database. This function is then recursively called until there are no more rows to process.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 collectResults : 
   Eff IO 
   [SQLITE (SQLiteRes PreparedStatementExecuting)] 
@@ -452,49 +467,69 @@ collectResults = do
                          return $ (name, age) :: xs
       NoMoreRows => return []
       StepFail => return [] $
-\end{verbatim}
-}
-
+\end{Verbatim}
 In order to decrease unnecessary boilerplate code in user applications, we provide functions which abstract out unnecessary parts of this process. In order to do this, we define the algebraic data type \texttt{DBVal}, which is a tagged union over simple primitive types:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 data DBVal = DBInt Int
            | DBText String
            | DBFloat Float
            | DBNull
-\end{verbatim}
-}
+\end{Verbatim}
 We also make use of the \texttt{ResultSet} type, which is a list of returned database rows.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
   ResultSet : Type
   ResultSet = List (List DBVal)
-\end{verbatim}
-}
+\end{Verbatim}
 Using these, we may implement a function, \texttt{ExecuteSelect}, which, given a query, a list of variables to bind and their associated indices within the query, and a function which is used to extract information out of each returned database row, returns either a \texttt{ResultSet} or an error.
-{\small
-\begin{verbatim}
-executeSelect : String ->
-                String -> 
-                List (Int, DBVal) -> 
-                (Eff m [SQLITE 
-                  (SQLiteRes PreparedStatementExecuting)
-                   ] 
-                 (List DBVal)
-                ) -> 
-                Eff m [SQLITE ()] (Either String ResultSet)
-\end{verbatim}
-}
+\begin{Verbatim}
+executeSelect : 
+  String -> String -> List (Int, DBVal) -> 
+  (Eff m [SQLITE (SQLiteRes PreparedStatementExecuting)] 
+                 (List DBVal)) -> 
+  Eff m [SQLITE ()] (Either String ResultSet)
+\end{Verbatim}
 % =================================================
-
 \subsection{A Simple Session Handler}
 More complex web applications require some persistent state across separate requests. This is often done through an abstraction of a \textit{session}, wherein a cookie is set on the remote host containing a unique session ID, which is in turn used to retrieve data. In this section, we describe the implementation of a simple session handler, and the resource usage protocol involved. 
 
 A major strength of the \texttt{Effects} library is that it allows for simple composition of individual, fine-grained effects. By combining the individual CGI and SQLite components, we may construct a simple session handler to provide a notion of state across separate web requests. 
 
 We implement this by having a SQLite database, containing two tables: \texttt{session}, which stores session keys and their associated expiry dates, and \texttt{sessiondata}, which contains the data associated with each session. A datum associated with the session is described as a tagged union containing one of the primitive types \texttt{String}, \texttt{Bool} or \texttt{Int}, which is serialised alongside a type tag for storage in the database.
-
 %TODO: Fix up the labels
+\begin{Verbatim}[samepage]
+data Session : Effect where
+  LoadSession : 
+  SessionID -> 
+  Session (SessionRes SessionUninitialised) 
+          (SessionRes SessionInitialised) 
+          (Maybe SessionData)
+  UpdateSession : 
+    SessionData -> 
+    Session (SessionRes SessionInitialised) 
+            (SessionRes SessionInitialised) ()
+  CreateSession : 
+    SessionData -> 
+    Session (SessionRes SessionUninitialised) 
+            (SessionRes SessionInitialised) 
+            (Maybe SessionID)
+  DeleteSession : 
+    Session (SessionRes SessionInitialised) 
+            (SessionRes SessionUninitialised) Bool 
+  WriteToDB : 
+    Session (SessionRes SessionInitialised) 
+            (SessionRes SessionUninitialised) Bool
+  DiscardSessionChanges : 
+    Session (SessionRes SessionInitialised) 
+            (SessionRes SessionUninitialised) ()
+  GetSessionID : 
+    Session (SessionRes SessionInitialised) 
+            (SessionRes SessionInitialised) 
+            (Maybe SessionID)
+  GetSessionData : 
+    Session (SessionRes SessionInitialised) 
+            (SessionRes SessionInitialised) 
+            (Maybe SessionData)
+\end{Verbatim}
 \begin{figure}[htpb!]
 \centering
 \scalebox{0.8}{
@@ -516,12 +551,10 @@ We implement this by having a SQLite database, containing two tables: \texttt{se
 \caption{Session Handler Resource Usage Protocol}
 \label{fig:sessionstates}
 \end{figure}
-
 Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated with the session handler. In this application, there exist two states: \texttt{SessionUninitialised}, in which the user may load or create a new session, and \texttt{SessionInitialised}, in which the user may update the representation of the session in memory, serialise the session and write it to the database, or delete the session and invalidate the user's session key. The introduction of these two states ensures that changes are explicitly either written or discarded, eliminating the possibility of a developer updating the session but neglecting to commit it to persistent storage. This, of course, is under the assumption that the process exits cleanly: we attempt to facilitate this by writing total functions where possible.
 
 Much like the SQLite effect, we encapsulate failure by reflecting it in the resource associated with the effect. 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 data SessionStep = SessionUninitialised
                  | SessionInitialised
 
@@ -530,8 +563,7 @@ data SessionRes : SessionStep -> Type where
   ValidSession   : SessionID -> 
                    SessionData -> 
                    SessionRes s
-\end{verbatim}
-}
+\end{Verbatim}
 The \texttt{SessionRes} data type is parameterised over the current state, which determines which operations may be performed, and has two constructors: \texttt{InvalidSession} and \texttt{ValidSession}. If an operation such as creating a new session fails, no further side-effecting calls will be made, in turn preserving integrity. 
 
 % =================================================
@@ -542,44 +574,38 @@ Programming web applications often involves processing user data, which may then
 
 This can in turn increase lead to risks; developers may assume that a data is of a certain type, and therefore discount the possibility that it may have been modified by an attacker. One example would be the traversal of paginated data, in which a form is used to make a request to retrieve the next page of data. This may involve sending an integer detailing the current page, which could be used in a query such as:
 
-{\small
-\begin{verbatim}
-SELECT `name`, `address` FROM `staff` LIMIT ' + page + ', 5
-\end{verbatim}
-}
+\begin{Verbatim}
+'SELECT `name`, `address` FROM `staff` LIMIT ' + page + '
+                                                     , 5'
+\end{Verbatim}
 The \texttt{page} variable is assumed to be an integer, but may instead be modified by an attacker to include a malicious string which would alter the semantics of the query, allowing an attacker to execute a blind SQL injection attack. % Might be a good idea to cite an SQL injection paper which uses LIMIT clauses here
 
 In this section, we present a mechanism by which we introduce a web form DSL for the creation of forms which preserve type information. Once the form has been submitted, retrieved information is passed directly to a developer-specified function for handling, without the need to manually check and deserialise data. 
 
 \subsection{Form Construction}
 Each form element is specified to hold a particular type of data, which is then passed directly as that particular type, assuming that the correct type of data is specified by the user, to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 data FormTy = FormString
             | FormInt
             | FormBool
             | FormFloat
             | FormList FormTy 
-\end{verbatim}
-}
+\end{Verbatim}
 Recalling that types in \idris{} are first-class, we may use this to convert between abstract and concrete representations of allowed form types:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 interpFormTy : FormTy -> Type
 interpFormTy FormString = String
 interpFormTy FormInt = Int
 interpFormTy FormBool = Bool
 interpFormTy FormFloat = Float
 interpFormTy (FormList a) = List (interpFormTy a)
-\end{verbatim}
-}
+\end{Verbatim}
 %
 In order to specify a form, we once again use \texttt{Effects}. By recording the type of each form element as it is added in the type of the form, we may statically ensure that the user-supplied handler function is of the correct type to handle the data supplied by the form: the specification of an incompatible handler will result in a compile-time type error.
 
 \idris{} allows for implicit arguments to be bound across a block of code through \texttt{using} notation. We may therefore parameterise the EDSL over the types associated with each form element, and the effects required by the handler function.
 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 using (G : List FormTy, E : List WebEffect)
   data FormRes : List FormTy -> 
                  List WebEffect -> Type where
@@ -600,61 +626,57 @@ using (G : List FormTy, E : List WebEffect)
     Submit : (mkHandlerFn ((reverse G), E)) ->
              String -> 
              Form (FormRes G E) (FormRes [] []) String
-\end{verbatim}
-}
+\end{Verbatim}
 The implementation of the form EDSL also contains other constructs for additional form elements such as radio buttons and check boxes, but are omitted in the interest of brevity.
 
-The resource associated with the EDSL, \texttt{FormRes}, is parameterised over a list of the types associated with each element and the effects supported by the handler function. The constructor, \texttt{FR}, requires the number of elements in the form in order to allow for the naming of new elements, the list of element types, the list of effects supported by the handler function, and the currently generated HTML for the form. It is necessary to keep track of the element types at both the type and value level as we must use the values in later computations when serialising the handler function. 
+We make use of the resource associated with the EDSL, \texttt{FormRes}, to construct the form. The resource allows us to record the types associated with each form element and the HTML required to display the form. he constructor, \texttt{FR}, requires the number of elements in the form in order to allow for the naming of new elements, the list of element types, the list of effects supported by the handler function, and the currently generated HTML for the form. 
 
-By adding elements to the form, the list of form types \texttt{G} is updated, as seen in the output value of \texttt{AddTextBox}. Additionally, HTML for the form element is generated, and stored in the resource, which is returned by the \texttt{addSubmit} function in order for it to be displayed on the web page.
+By parameterising the resource over a list of the types associated with each element and the effects supported by the handler function, we may ensure that only a handler function that is compatible with the submitted data may be specified. It is necessary to keep track of the element types at both the type and value level as we must use the values in later computations when serialising the handler function. 
+
+By adding elements to the form, the list of form types \texttt{G} is updated, as seen in the output value of \texttt{AddTextBox}. Additionally, HTML for the form element is generated, and stored in the resource. The generated HTML is subsequently returned by the \texttt{addSubmit} function in order for it to be displayed on the web page.
 
 To specify a form instance, we define a function of type \texttt{UserForm}:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
   UserForm : Type
   UserForm = EffM m [FORM (FormRes []) 
                           (FormRes [])] String
-\end{verbatim}}
+\end{Verbatim}
 All forms are required to include a submit button, as mandated by the requirement that the input and output resource contains an empty list of types; this requirement is fulfilled as per the output resource type of the \texttt{AddSubmit} operation. As the creation of a form is a pure function which does not include side effects, we do not restrict the handler to IO as with previously-discussed EDSLs, instead denoting the fact that it may be run in any handler with the implicit variable \texttt{m}.
 
 Handlers may only be associated with a form if they have argument types corresponding to the types associated with the form elements. Additionally, we wish to name the function in order for it to be serialised, whilst requiring a proof that the specified name is associated with the function. If this were not the case, it would be possible to specify a function which satisfies the type requirement, without guaranteeing that it the serialised data corresponded to that function, thus rendering the check pointless. 
 
 Before associating a handler function with the form, we must specify the effects available to the handler. This is done through the use of the \texttt{useEffects}, which updates the list of effects in the type of the form resource. By doing this, we may subsequently use the effects in calculations at the type level, in particular when calculating the type of the handler function for the form. 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
   useEffects : (effs : List WebEffect) ->
                EffM m [FORM (FormRes G E)] 
                       [FORM (FormRes G effs)] ()
   useEffects effs = (UseEffects effs)
-\end{verbatim}}
-Whilst it is not possible to serialise arbitrary effects due to the associated difficulties with serialising initial resource environments, we allow for three effects to be serialised: \texttt{CGI}, \texttt{SQLITE} and \texttt{SESSION}. This is, however, not an inherent limitation as the \texttt{Effects} library allows for the introduction of effects within an effectful computation.
+\end{Verbatim}
+Whilst it is not possible to serialise arbitrary effects due to the associated difficulties with serialising initial resource environments, we allow for three effects to be serialised: \texttt{CGI}, \texttt{SQLITE} and \texttt{SESSION}. This is, however, not an inherent limitation as the \texttt{Effects} library allows for the introduction of additional effects within an effectful computation.
 %
 We may specify a handler function of type \texttt{FormHandler}:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
   FormHandler : List EFFECT -> Type
   FormHandler effs = Eff IO effs ()
-\end{verbatim}
-}
+\end{Verbatim}
 In order to associate a handler with a form, we may call the \texttt{addSubmit} function:
-{\small
-\begin{verbatim}
-  addSubmit : (f :  mkHandlerFn ((reverse G), E)) ->
-              (fns : HandlerList) ->
-              {default tactics { applyTactic 
-                findFn 100; solve; }
-               prf : FnElem f fns} ->
-              EffM m [FORM (FormRes G E)]
-                     [FORM (FormRes [] [])] 
-                     String
+\begin{Verbatim}
+  addSubmit : 
+    (f :  mkHandlerFn ((reverse G), E)) ->
+    (fns : HandlerList) ->
+    {default tactics 
+      { applyTactic findFn 100; solve; }
+      prf : FnElem f fns} ->
+    EffM m [FORM (FormRes G E)]
+           [FORM (FormRes [] [])] 
+           String
   addSubmit f handlers {prf} = (Submit f name)
     where name : String
           name = getString' f handlers prf          
-\end{verbatim}
-}
+\end{Verbatim}
+
 Let us look at each aspect of this function in turn. Firstly, the \texttt{mkHandlerFn} function calculates the required type of the handler function from the list of types associated with the form elements, and the effects we specified with \texttt{useEffects}. Note that since we prepend types to the list of \texttt{FormTy}s as opposed to appending them, we must reverse the list.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 MkHandlerFnTy : Type
 MkHandlerFnTy = (List FormTy, List WebEffect)
 
@@ -665,27 +687,23 @@ mkHandlerFn' (x :: xs) effs = Maybe (interpFormTy x) ->
 
 mkHandlerFn : MkHandlerFnTy -> Type 
 mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
-\end{verbatim}
-}
+\end{Verbatim}
 The \texttt{mkHandlerFn} function takes a tuple describing the arguments and web effects available to the handler function. When constructing the function type, we encase all arguments withing \texttt{Maybe} type, in order to handle failure should the supplied data fail to parse to the specified type.
 
 To store a reference to a handler function, we use the \texttt{HandlerFn} type:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 HandlerFn : Type
 HandlerFn = (ft ** (mkHandlerFn ft, String))
-\end{verbatim}
-}
+\end{Verbatim}
 %
 The \texttt{**} notation denotes a dependent pair, wherein one argument, in this case the concrete handler function, depends on another, namely \texttt{MkHandlerFnTy} data used to construct the type of the handler function. We also store a unique string identifier, which is used to serialise a reference to the handler function. We then store each \texttt{HandlerFn} in a \texttt{HandlerList}.
 
-\begin{verbatim}
+\begin{Verbatim}
 HandlerList : Type
 HandlerList = List HandlerFn
-\end{verbatim}
+\end{Verbatim}
 To enforce the requirement that a supplied handler function must reside in the list of available handlers, and therefore allow us to retrieve the name with which to serialise the handler, we require a \textit{list membership proof},  \texttt{FnElem f fns}, which statically guarantees that a given item resides in a list.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
   data FnElem : mkHandlerFn ((reverse G), E) -> 
                 HandlerList -> Type where
                 
@@ -695,8 +713,7 @@ To enforce the requirement that a supplied handler function must reside in the l
        FnThere : {xs : HandlerList, f : 
                  mkHandlerFn ((reverse G), E)} ->
                FnElem f xs -> FnElem f (x :: xs)
-\end{verbatim}
-}
+\end{Verbatim}
 \texttt{FnElem} is parameterised over \texttt{G} and \text{E}, the types of the form elements and the effects used by the handler function. \texttt{FnHere} demonstrates that the element is at the head of the current point of the list, whereas \texttt{FnThere} demonstrates that the element is at some point further in the list. %TODO: this should probably be rewritten
 We may then use linguistic reflection and a simple automated proof search to automatically generate the proof at compile time, should one exist. The proof may then be used in subsequent computations: in our case, we use it to retrieve the unique identifier for the function. If the automated proof search fails, compilation will fail.
 
@@ -713,17 +730,17 @@ Once the form has been submitted, a web application may handle the submitted dat
 With this data, we may then look up the function in the list of registered handlers by using the serialised unique handler identifier. In order to apply the handler function to the data submitted in the form, we must first prove to the type-checker that the deserialised \texttt{MkHandlerFnTy} is the same as the one retrieved from the list of registered handlers. We do this by making use of the \texttt{decEq} function, which determines whether two types are equal, returning a proof of equality if so, and a proof of inequality if not.
 
 With this proof, we may then use the \texttt{with} construct, inspired by \textit{views} in Agda \cite{mcbride.mckinna:viewfromleft}, to rewrite the arguments on the left hand side. This allows us to construct a function which, given the handler stored in the list of handlers, the data required to construct the function type and the \texttt{MkHandlerFnTy} deserialised from the form, determines whether the two \texttt{MkHandlerFnTy}s are decidably equal. If so, we may rewrite this on the left hand side, and therefore demonstrate that the recorded function may also be used to handle the form data. If not, the computation is abandoned and an error is shown. % I gave it a shot, right? :P
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 checkFunctions : (reg_fn_ty : MkHandlerFnTy) -> 
                  (frm_fn_ty : MkHandlerFnTy) -> 
                  mkHandlerFn reg_fn_ty -> 
                  Maybe (mkHandlerFn frm_fn_ty)
 checkFunctions reg_ty frm_ty reg_fn with 
                              (decEq reg_ty frm_ty)
-  checkFunctions frm_ty frm_ty reg_fn | Yes refl = Just reg_fn
+  checkFunctions frm_ty frm_ty reg_fn | Yes refl = 
+                                            Just reg_fn
   checkFunctions reg_ty frm_ty reg_fn | No _ = Nothing
-\end{verbatim}}
+\end{Verbatim}
 We may then parse the arguments according to the types specified by the handler function, and then apply the arguments to the handler function through the use of partial application. Finally, we may run the handler function, ensuring that all updates made to the CGI state are propagated.
 
 %-----------------------------
@@ -737,20 +754,16 @@ Firstly, we create a database schema in which to record information stored by th
 
 Secondly, we use a GET variable, \texttt{action}, to indicate which page of the message board should be displayed, and pattern-match on these to call the appropriate function which displays the page. Some pages, such as the page which shows all of the posts in a thread, require a second argument, \texttt{thread\_id}. 
 \subsection{Handling requests}
-Once the program is invoked via a CGI request, the \texttt{main} function will be called. We then run the remainder of the program through a call to \texttt{runCGI}, which we initialise with empty initial environments for the CGI, Session and SQLite effects, so they may be used in further computations. 
-
-{\small
-\begin{verbatim}
+The entry point to any CGI application is the \texttt{main} function. From here, we run the remainder of the program through a call to \texttt{runCGI}, which we initialise with empty initial environments for the CGI, Session and SQLite effects, so they may be used in further computations. 
+\begin{Verbatim}
 main : IO ()
 main = do (runCGI [initCGIState, 
                   InvalidSession, ()] 
            handleRequest)
           pure ()
-\end{verbatim}
-}
+\end{Verbatim}
 We specify a function, \texttt{handleRequest}, which firstly calls \texttt{isHandlerSet} to determine whether submitted form data must be handled. If so, then the form handling routine is called, which executes the corresponding handler function as specified in Section ~\ref{formhandling}. If not, then the \texttt{handleNonFormRequest} function is called, which inspects the GET variables in order to display the correct page.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 handleRequest : CGIProg [SESSION 
   (SessionRes SessionUninitialised), 
   SQLITE ()] ()
@@ -763,46 +776,38 @@ handleRequest = do
     action <- lift' (queryGetVar "action")
     thread_id <- lift' (queryGetVar "thread_id")
     handleNonFormRequest action (map strToInt thread_id)
-\end{verbatim}
-}
+\end{Verbatim}
 \subsection{Thread Creation}
 We specify four forms: one to handle registration, one to handle logging in, one to handle the creation of new threads, and one to handle the creation of new posts. One such example would be the form used to create a new thread, which contains elements for the title of the new thread and the content of the first post of the new thread.
-
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 newThreadForm : UserForm
 newThreadForm = do
   addTextBox "Title" FormString Nothing
   addTextBox "Post Content" FormString Nothing 
   useEffects [CgiEffect, SessionEffect, SqliteEffect]
   addSubmit handleNewThread handlers
-\end{verbatim}
-}
+\end{Verbatim}
 The form consists of two text boxes: one for the title of the thread, and one for the content of the first post. Both are of type \texttt{String}, as denoted by the \texttt{FormString} argument, and both have no default value. The handler function may make use of the \texttt{CGI}, \texttt{SESSION} and \texttt{SQLITE} effects, and the handler function is specified as \texttt{handleNewThread}. The \texttt{handlers} argument refers to the list of form handlers, and is of the following form:
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 handlers : HandlerList
-handlers = [(([FormString, FormString], 
-              [CgiEffect, SessionEffect, SqliteEffect]) ** 
-               (handleRegisterForm, "handleRegisterForm")),
+handlers = 
+  [(([FormString, FormString], 
+     [CgiEffect, SessionEffect, SqliteEffect]) ** 
+     (handleRegisterForm, "handleRegisterForm")),
                
-            (([FormString, FormString], 
-              [CgiEffect, SessionEffect, SqliteEffect]) ** 
-               (handleNewThread, "handleNewThread")),
+   (([FormString, FormString], 
+     [CgiEffect, SessionEffect, SqliteEffect]) ** 
+     (handleNewThread, "handleNewThread")),
              ...
-            ]
-\end{verbatim}
-}
+  ]
+\end{Verbatim}
 Creating a new thread requires a user to be logged in, so that the thread starter may be recorded in the database. In order to do this, we make use of the session handler. We define a function \texttt{withSession}, which attempts to retrieve the session associated with the current request, and if it exists, executes a function which is passed the associated session data. If not, then a failure function is called instead. Should the form handler function be called with invalid arguments, an error is shown.
-{\small
-\begin{verbatim}
-handleNewThread : Maybe String -> 
-                  Maybe String -> 
-                  FormHandler [CGI (InitialisedCGI 
-                                 TaskRunning), 
-                               SESSION (SessionRes 
-                                 SessionUninitialised), 
-                               SQLITE ()]  
+\begin{Verbatim}
+handleNewThread : 
+  Maybe String -> Maybe String -> 
+  FormHandler [CGI (InitialisedCGI TaskRunning), 
+               SESSION (SessionRes SessionUninitialised), 
+               SQLITE ()]  
 handleNewThread (Just title) (Just content) = do 
   withSession (addNewThread title content) notLoggedIn
   pure ()
@@ -810,11 +815,9 @@ handleNewThread _ _ = do
   outputWithPreamble "<h1>Error</h1><br />There was 
        an error posting your thread."
   pure ()
-\end{verbatim}
-}
+\end{Verbatim}
 Once we have loaded the session data from the database, we then check whether the \texttt{UserID} variable is set, which demonstrates that a user has successfully logged into the system, and allows us to use the ID in subsequent computations. The database operation to insert the thread into the database is performed by the \texttt{threadInsert} function, which makes use of the \texttt{executeInsert} library function. This function abstracts over the low-level resource usage protocol, enabling for provably-correct database access without the excess boilerplate code. In addition, the function also returns the unique row ID of the last item which was inserted, which may be used in subsequent computations. In the case of the message board, we use this to associate the first post of the thread with the thread being inserted.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 threadInsert : Int -> 
                String -> 
                String -> 
@@ -827,21 +830,18 @@ threadInsert uid title content = do
   case insert_res of
     Left err => pure False
     Right thread_id => postInsert uid thread_id content
-\end{verbatim}
-}
+\end{Verbatim}
 \subsection{Listing Threads}
 Listing the threads in the database is achieved through the use of the \texttt{executeSelect} library function, which in turn returns either a \texttt{ResultSet} or an error. 
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 getThreads : Eff IO [SQLITE ()] (Either String ResultSet)
-getThreads = executeSelect DB_NAME query [] collectThreadResults
-  where query = "SELECT `ThreadID`, `Title`, `UserID`, 
-    `Username` FROM `Threads` NATURAL JOIN `Users`"
-\end{verbatim}
-}
+getThreads = 
+  executeSelect DB_NAME query [] collectThreadResults
+ where query = "SELECT `ThreadID`, `Title`, `UserID`, 
+   `Username` FROM `Threads` NATURAL JOIN `Users`"
+\end{Verbatim}
 Once the result set has been retrieved, we may iterate through the results and output them to the page, including a link to a page which shows the posts associated with the thread. Since we know the structure of the returned row from designing the query, we may pattern match on each returned row to make use of the returned values.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 traverseThreads : ResultSet -> 
   Eff IO [CGI (InitialisedCGI TaskRunning)] ()
 traverseThreads [] = pure ()
@@ -859,12 +859,10 @@ traverseThreads (x::xs) = do traverseRow x
             title ++ "</a></td><td>" ++ 
             username ++ "</td></tr>") 
         traverseRow _ = pure ()
-\end{verbatim}
-}
+\end{Verbatim}
 \subsection{Authentication}
 Once a user submits the login form, the associated handler queries the database to ascertain whether a user with the given username and password exists through a call to the \texttt{authUser} function. If so, then the session handler is invoked, and a session is initialised with the user ID retrieved from the database. The session ID is then set as a cookie using the CGI effect, so that it may be used in subsequent requests. Any failures, for example with creating a new session or querying the database, are reported to the user.
-{\small
-\begin{verbatim}
+\begin{Verbatim}
 handleLoginForm (Just name) (Just pwd) = do
   auth_res <- lift' (authUser name pwd)
   case auth_res of
@@ -882,7 +880,7 @@ handleLoginForm (Just name) (Just pwd) = do
     Left err => do
       lift' (output \$ "Error: " ++ err)
       pure ()
-\end{verbatim}}
+\end{Verbatim}
 Implementations for the insertion and display of posts, alongside registration, are similar in form to those described above, and are as such omitted from this paper.
 
 Although we have described a relatively simple application, we have shown that through the use of embedded domain-specific languages, we may write verified code that fails to compile should resources be incorrectly accessed. Additionally, we have used the form handling mechanism to simply handle the arguments passed by the user. Importantly, we have shown that dependent types can be used to increase confidence in an (albeit simplified) real-world application, without requiring developers to supply proofs or indeed work explicitly with dependent types. 
@@ -895,16 +893,23 @@ Although we have described a relatively simple application, we have shown that t
 %-----------------------------
 
 \section{Conclusions}
-Dependently-typed languages have, for a long time, remained relatively unused outside of academia. Advances in embedded domain-specific languages have allowed many of the advantages of such languages, including the additional guarantees given by the successful compilation of a program (assuming the use of specific enough tyeps) to be adopted without the additional proofs traditionally required by users of such languages.
+Dependently-typed languages have, for a long time, remained relatively unused outside of academia. Advances in embedded domain-specific languages have allowed many of the advantages of such languages, including the additional guarantees given by the successful compilation of a program (assuming the use of specific enough types) to be adopted without the additional proofs traditionally required by users of such languages.
 
+Our framework, through the use of dependent types, provides several static guarantees. Data submitted by users is inherently unsafe due to the possibility of attacks such as SQL injection, and this particular threat is ameliorated due to elements to be associated with specific types during form construction. This immediately eliminates the possibilities of SQL injection attacks on non-string types. Since failures are handled transparently, no runtime errors are output to the browser, meaning that attackers may not use such information to aid attacks. Additionally, since checking is performed on the types of the form elements and the types of arguments accepted by the handler, it is impossible to associate a form with a handler incompatible with the submitted data.
+
+Many external libraries must also adhere to a resource usage protocol, in order to ensure correct operations. Since such libraries do not have as expressive a type system as \idris{}, however, incorrect usage is still possible, for example by developers forgetting to release acquired resources or failing to initialise a library correctly. By creating high-level bindings to these libraries, however, we may statically enforce these resource-usage protocols, ensuring that the libraries are used correctly. Whilst previous work has demonstrated that this is possible through the use of embedded DSLs \cite{} and parameterised algebraic effects \cite{brady:effects}, this paper has provided more substantial examples of real-world applications. 
+
+In particular, the framework guarantees that it is not possible for CGI to produce an internal server error due to content being written to the remote host prior to headers. With regard to database access, we may statically guarantee that library calls are made in the correct order, and calls to retrieve rows of data are made only when more data is available. Additionally, by recording any failures in the resource associated with the database effect, we may ensure that any failures at certain stages in the process may be correctly dealt with, and not propagate to further library calls---if a prepared statement fails to compile, for example, the framework guarantees that it will not be executed, without causing a fatal runtime error.
+
+Enforcing resource usage protocols also guards against common programmer errors, saving debugging time by identifying errors at compile time.
 \subsection{Further Work}
 We have shown that embedded domain-specific languages using dependent types and algebraic effects can be used to increase confidence in web applications by providing additional static guarantees about runtime behaviour, but much more can be done using the same approach.
 
-There are many other applications which make use of specific resource usage protocols, for example popular libraries such as \textit{libgcrypt} \cite{libgcrypt}. Applying a similar approach would allow for sensitive programs requiring cryptographic routines to be written using a language with full dependent types, in turn adding an extra layer of confidence to their security. 
+There are many other applications which make use of specific resource usage protocols, for example popular libraries such as \textit{libgcrypt}\footnote{\texttt{http://directory.fsf.org/wiki/Libgcrypt}}. Applying a similar approach would allow for sensitive programs requiring cryptographic routines to be written using a language with full dependent types, in turn adding an extra layer of confidence in their security. 
 
-Whilst the use of CGI allows for experimenting with the use of dependent types in a real-world scenario such as web programming, there remain practical considerations about its scalability, as a separate process must be created for each individual request request. Ultimately, we would like to create a web server written in \idris{}, which would make more efficient usage of resources. 
+Whilst the use of CGI allows for experimenting with the use of dependent types in a real-world scenario such as web programming, there remain practical considerations about its scalability, as a separate process must be created for each individual request. We believe that the use of FastCGI may alleviate this, but ultimately, we would like to create a web server written in \idris{}, which would make more efficient usage of resources. 
 
-Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that
+Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that more developers may benefit from the extra guarantees afforded by dependent types, resulting in more stable, secure applications.
 % Cryptography bindings would be really good.
 % Integration with a web server instead of doing everything over CGI
 % Improvements to form handling system
