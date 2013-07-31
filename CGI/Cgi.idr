@@ -15,10 +15,14 @@ import Session
 import Debug.Trace
 %access public -- for now
 -- %default total
+
+-- Syntax macro, so that users don't have to bother with dependent pairs, etc.
+syntax "handler args=" [args] ", effects=" [effs] ", fn=" [fn] ", name=" [name] = ((args, effs) ** (fn, name))
+
 -- Bit of a hack for now, until I can get it so that the user doesn't
 -- have to type this
 initCGIState : (InitialisedCGI TaskRunning)
-initCGIState = ICgi (CGIInf [] [] [] "" "" "this shouldn't happen")
+initCGIState = ICgi (CGIInf [] [] [] "" "" "")
 
 
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String

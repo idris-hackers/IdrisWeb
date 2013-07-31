@@ -30,18 +30,21 @@
 % authoryear    To obtain author/year citation style instead of numeric.
 
 \usepackage{amsmath}
-\usepackage{silence}
+%\usepackage{silence}
 \usepackage{pgf}
 \usepackage{tikz}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 \usepackage{fancyvrb}
+\usepackage[numbers]{natbib}
 \usetikzlibrary{arrows,automata}
-\WarningsOff
+%\WarningsOff
 
 \begin{document}
 \fvset{fontsize=\small}
 \newcommand{\idris}{\textsc{Idris}}
+\newcommand{\idata}{\textsf{iData}}
+\newcommand{\itasks}{\textsf{iTasks}}
 \special{papersize=8.5in,11in}
 \setlength{\pdfpageheight}{\paperheight}
 \setlength{\pdfpagewidth}{\paperwidth}
@@ -61,7 +64,7 @@
                                   % (paid open-access papers, 
                                   % short abstracts)
 
-\titlebanner{Draft for submission to IFL 2013}        % These are ignored unless
+\titlebanner{}        % These are ignored unless
 \preprintfooter{}   % 'preprint' option specified.
 
 \title{Correct and Secure Web Programming using Dependent Types and Embedded Domain-Specific Languages}
@@ -74,7 +77,7 @@
 \maketitle
 
 \begin{abstract}
-Dependently-typed languages allow for much expressive types to be used within programs in turn allowing easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker and additional proofs may have to be specified by a user.
+Dependently-typed languages allow much expressive types to be used within programs, in turn allowing easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker and additional proofs may have to be specified by a user.
 
 Embedded domain-specific languages (EDSLs) address this problem by introducing a layer of abstraction over more specific underlying types, allowing domain-specific code to be written in high-level languages which use dependent types to enforce certain invariants without additional proof obligations. 
 
@@ -287,15 +290,14 @@ This is then passed, along with initial values for other effects that the user m
 A simple ``Hello, world!'' program would be defined as follows:
 
 \begin{Verbatim}
+module Main
 import Cgi
-import Effects
 
 sayHello : CGIProg [] ()
 sayHello = output "Hello, world!"
 
 main : IO ()
-main = do runAction [initCGIState] sayHello
-          pure ()
+main = runCGI [initCGIState] sayHello
 \end{Verbatim}
 % =================================================
 
@@ -446,7 +448,7 @@ testSelect dept = do
     else do err <- stmtFail
             return $ Left err
   else do err <- connFail
-          return $ Left err $
+          return $ Left err 
 \end{Verbatim}
 The program initially attempts to open a connection to the \texttt{people.db} database. At this point, since the \texttt{OpenDB} operation has been invoked, the program transitions to the \texttt{ConnectionOpened} state. The \texttt{openDB} function returns a Boolean value indicating whether or not the operation is successful. If not, then the \texttt{connFail} function is called to generate an appropriate error and dispose of the resources, as shown in ~\ref{fig:sqlitestates}.
 
@@ -466,7 +468,7 @@ collectResults = do
                          xs <- collectResults
                          return $ (name, age) :: xs
       NoMoreRows => return []
-      StepFail => return [] $
+      StepFail => return [] 
 \end{Verbatim}
 In order to decrease unnecessary boilerplate code in user applications, we provide functions which abstract out unnecessary parts of this process. In order to do this, we define the algebraic data type \texttt{DBVal}, which is a tagged union over simple primitive types:
 \begin{Verbatim}
@@ -575,14 +577,64 @@ Programming web applications often involves processing user data, which may then
 This can in turn increase lead to risks; developers may assume that a data is of a certain type, and therefore discount the possibility that it may have been modified by an attacker. One example would be the traversal of paginated data, in which a form is used to make a request to retrieve the next page of data. This may involve sending an integer detailing the current page, which could be used in a query such as:
 
 \begin{Verbatim}
-'SELECT `name`, `address` FROM `staff` LIMIT ' + page + '
-                                                     , 5'
+'SELECT `name`, `address` FROM `staff` LIMIT ' + 
+       page + ', 5';
 \end{Verbatim}
 The \texttt{page} variable is assumed to be an integer, but may instead be modified by an attacker to include a malicious string which would alter the semantics of the query, allowing an attacker to execute a blind SQL injection attack. % Might be a good idea to cite an SQL injection paper which uses LIMIT clauses here
 
 In this section, we present a mechanism by which we introduce a web form DSL for the creation of forms which preserve type information. Once the form has been submitted, retrieved information is passed directly to a developer-specified function for handling, without the need to manually check and deserialise data. 
 
+We begin with a simple example of a form which requests a user's name, and echoes it back. Firstly, we define a form handler which echoes back a string provided by the form handler. It has one argument of type \texttt{Maybe String}, which accounts for the possibility that the user may have specified incorrect data within the form.
+
+\begin{Verbatim}
+sayHello : Maybe String -> 
+           FormHandler [CGI (InitialisedCGI TaskRunning)]
+sayHello (Just name) = output ("Hello, " ++ name ++ "!")
+sayHello _ = output "Error!"
+\end{Verbatim}
+
+We then specify this in a list of handlers, detailing the arguments, available effects, handler function and unique identifier:
+
+\begin{Verbatim}
+handlers : HandlerList
+handlers = [(handler args=[FormString], 
+                     effects=[CgiEffect], 
+                     fn=sayHello, 
+                     name="sayHello")
+           ]
+\end{Verbatim}
+
+We also define a form to take in a name from the user, and specify that it should use the \texttt{sayHello} handler.
+
+\begin{Verbatim}
+showHelloForm : UserForm
+showHelloForm = do
+  addTextBox "Name" FormString Nothing
+  useEffects [CgiEffect]
+  addSubmit sayHello handlers
+\end{Verbatim}
+
+Finally, we specify that if data has been submitted for processing, then it should be passed to the form handler. If not, then the form should be shown.
+
+\begin{Verbatim}
+cgiHello : CGIProg [] ()
+cgiHello = do
+  handler_set <- isHandlerSet
+  if handler_set then do
+    handleForm handlers
+    return ()
+  else do
+    addForm "nameform" "helloform" showHelloForm
+    return ()
+
+main : IO ()
+main = runCGI [initCGIState] cgiHello
+\end{Verbatim}
+When this CGI application is invoked, it will begin by outputting a form to the page, requesting a name from the user. Upon submission of the form, the form handler will be invoked, and the name will be used in the output.
+
+In Sections ~\ref{formcons} and ~\ref{formhandling}, we examine implementation of the form-handling system: namely, the EDSL which allows the creation of forms, and the handling code which deserialises the data and passes it to the user-specified handler function.
 \subsection{Form Construction}
+\label{formcons}
 Each form element is specified to hold a particular type of data, which is then passed directly as that particular type, assuming that the correct type of data is specified by the user, to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
 \begin{Verbatim}
 data FormTy = FormString
@@ -696,8 +748,24 @@ HandlerFn : Type
 HandlerFn = (ft ** (mkHandlerFn ft, String))
 \end{Verbatim}
 %
-The \texttt{**} notation denotes a dependent pair, wherein one argument, in this case the concrete handler function, depends on another, namely \texttt{MkHandlerFnTy} data used to construct the type of the handler function. We also store a unique string identifier, which is used to serialise a reference to the handler function. We then store each \texttt{HandlerFn} in a \texttt{HandlerList}.
+The \texttt{**} notation denotes a dependent pair, wherein one argument, in this case the concrete handler function, depends on another, namely \texttt{MkHandlerFnTy} data used to construct the type of the handler function. We also store a unique string identifier, which is used to serialise a reference to the handler function. 
 
+In order to abstract away from this implementation detail, we make use of \idris{} syntax rewriting rules. This allows us to define the following syntax rewrite rule:
+\begin{Verbatim}
+syntax 
+  "handler args=" [args] ", effects=" [effs] ", fn=" [fn] 
+  ", name=" [name] = ((args, effs) ** (fn, name))
+\end{Verbatim}
+We may then define handlers in a more intuitive fashion, without being concerned with the implementation details. This allows us to write a handler with one String argument, making use of the CGI effect, associated with the \texttt{sayHello} handler function as follows:
+\begin{Verbatim}
+handler args=[FormString], 
+        effects=[CgiEffect], 
+        fn=sayHello, 
+        name="sayHello"
+\end{Verbatim}
+
+
+We then store each \texttt{HandlerFn} in a \texttt{HandlerList}.
 \begin{Verbatim}
 HandlerList : Type
 HandlerList = List HandlerFn
@@ -790,15 +858,17 @@ newThreadForm = do
 The form consists of two text boxes: one for the title of the thread, and one for the content of the first post. Both are of type \texttt{String}, as denoted by the \texttt{FormString} argument, and both have no default value. The handler function may make use of the \texttt{CGI}, \texttt{SESSION} and \texttt{SQLITE} effects, and the handler function is specified as \texttt{handleNewThread}. The \texttt{handlers} argument refers to the list of form handlers, and is of the following form:
 \begin{Verbatim}
 handlers : HandlerList
-handlers = 
-  [(([FormString, FormString], 
-     [CgiEffect, SessionEffect, SqliteEffect]) ** 
-     (handleRegisterForm, "handleRegisterForm")),
-               
-   (([FormString, FormString], 
-     [CgiEffect, SessionEffect, SqliteEffect]) ** 
-     (handleNewThread, "handleNewThread")),
-             ...
+handlers = [
+ (handler args=[FormString, FormString], 
+          effects=[CgiEffect, SessionEffect, SqliteEffect], 
+          fn=handleRegisterForm, 
+          name="handleRegisterForm"),
+  
+ (handler args=[FormString, FormString], 
+          effects=[CgiEffect, SessionEffect, SqliteEffect], 
+          fn=handleNewThread, 
+          name="handleNewThread"),
+     ...
   ]
 \end{Verbatim}
 Creating a new thread requires a user to be logged in, so that the thread starter may be recorded in the database. In order to do this, we make use of the session handler. We define a function \texttt{withSession}, which attempts to retrieve the session associated with the current request, and if it exists, executes a function which is passed the associated session data. If not, then a failure function is called instead. Should the form handler function be called with invalid arguments, an error is shown.
@@ -853,7 +923,7 @@ traverseThreads (x::xs) = do traverseRow x
                      (DBText title)::
                      (DBInt user_id)::
                      (DBText username)::[]) =
-           (output \$ "<tr><td>
+           (output $ "<tr><td>
             <a href=\"?action=showthread&thread_id=" ++ 
             (show thread_id) ++ "\">" ++ 
             title ++ "</a></td><td>" ++ 
@@ -869,7 +939,7 @@ handleLoginForm (Just name) (Just pwd) = do
     Right (Just uid) => do
       set_sess_res <- setSession uid
       if set_sess_res then do
-        lift' (output \$ "Welcome, " ++ name)
+        lift' (output $ "Welcome, " ++ name)
         pure ()
       else do
         lift' (output "Could not set session")
@@ -878,7 +948,7 @@ handleLoginForm (Just name) (Just pwd) = do
       lift' (output "Invalid username or password")
       pure ()
     Left err => do
-      lift' (output \$ "Error: " ++ err)
+      lift' (output $ "Error: " ++ err)
       pure ()
 \end{Verbatim}
 Implementations for the insertion and display of posts, alongside registration, are similar in form to those described above, and are as such omitted from this paper.
@@ -888,16 +958,27 @@ Although we have described a relatively simple application, we have shown that t
 %-----------------------------
 
 \section{Related Work}
+\citet{meijer:cgi} implemented a CGI library which was among the first libraries to handle web scripting monadically, and allows the user to implement application logic without having to consider the low-level details such as parsing in CGI data from the environment, or printing headers to the remote browser. The library also provides support for cookies and basic form handling. 
+
+\citet{thiemann:wash} further adds the notion of a CGI Session for maintaining state, and provides more sophisticated form-handling methods. In particular, callbacks may be associated with submit buttons, with nameless representations for form inputs. Due to the unavailability of full dependent types in Haskell, however, this implementation does not statically verify the suitability of the callback function for the form inputs. Both implementations of the CGI library, being built upon monads, mean that the use of additional effects such as database access is achieved either through monad transformers or the ability to perform arbitrary IO operations. Both of these approaches are limited---the former does not scale well to multiple effects, and the latter allows for the introduction of errors by allowing the violation of resource usage protocols.
+
+\citet{plasmeijer:idata} describe an alternative approach to type-safe form handling which does not require the use of dependent types through the \textit{i}nteractive \textit{Data}, or \idata{} abstraction. Instead of processing being triggered by form submission, as in the approach described in this paper, applications created in the \idata{} toolkit are instead edit-driven. This means that upon a component being edited, a computation occurs, given the state of the current form. This is then saved to be used in future computations. Should a user enter invalid data, for example by entering text in a field designated for integers, the change will be reverted. This is demonstrated practically through the use of \idata{} to implement a conference management system \cite{plasmeijer:cms}.
+
+The concept of \idata{} is taken further by the introduction of \itasks{} \cite{plasmeijer:itasks}, which make use of a workflow system to allow multiple \idata{} forms to interact with one another. This is achieved through the use of high-level combinators which allow the implementation of concepts such as recurseion, sequence and choice in a scalable fashion. These high-level abstractions are elegant, but the style and syntax differ substantially from a traditional web application. Our approach takes the concept of type-safe input handling and uses it in a more traditional fashion, whilst retaining the type-retention guarantees afforded by \idata{} elements.
+
+Ur\/Web \cite{urweb} is a library for the Ur language which makes use of dependent types to enable the generation of provably-correct and secure queries and DOM code, without requiring overly complex types or proofs. Through the use of the Ur\/Web DSL, developers may generate well-typed code from records. By statically verifying the \textit{code generator}, it is therefore possible to assert that the generated code is secure. Such ideas are extremely interesting for the implementation of object-relational mapping, which we hope to implement in the near future.
+
+WebDSL \cite{webdsl} is a domain-specific language written primarily to introduce new abstractions which aim to reduce the amount of boilerplate code that must be written and maintained by developeres. WebDSL is built on top of Java, which often includes a large amount of redundant code such as accessor and mutator functions within entity classes. The Java Persistence API (JPA) \cite{jpa} provides an object-relational mapping through the use of Java 5 annotations, which may then be used to construct database tables. These annotations soon become complex, however, and coupled with redundant boilerplate code, data model declarations may soon become unwieldy. Through the use of WebDSL, these data model declarations can be much more compactly declared, and elaborated into Java code by parsing the data-modelling DSL into an abstract syntax tree, applying rewrite rules, and pretty-printing. WebDSL also applies similar concepts to implement a \textit{template system} for such objects, which allows the data to be used in code generation. We look to implement many of these ideas, but as DSLs embedded within the IdrisWeb framework, as with the form construction EDSL.
 
 %-----------------------------
 %-----------------------------
 
 \section{Conclusions}
-Dependently-typed languages have, for a long time, remained relatively unused outside of academia. Advances in embedded domain-specific languages have allowed many of the advantages of such languages, including the additional guarantees given by the successful compilation of a program (assuming the use of specific enough types) to be adopted without the additional proofs traditionally required by users of such languages.
+Dependently-typed languages have, remained relatively unused for practical purposes outside of academia. Advances in embedded domain-specific languages have allowed many of the advantages of such languages, including the additional guarantees given by the successful compilation of a program (assuming the use of specific enough types) to be adopted without the additional proofs traditionally required by users of such languages.
 
 Our framework, through the use of dependent types, provides several static guarantees. Data submitted by users is inherently unsafe due to the possibility of attacks such as SQL injection, and this particular threat is ameliorated due to elements to be associated with specific types during form construction. This immediately eliminates the possibilities of SQL injection attacks on non-string types. Since failures are handled transparently, no runtime errors are output to the browser, meaning that attackers may not use such information to aid attacks. Additionally, since checking is performed on the types of the form elements and the types of arguments accepted by the handler, it is impossible to associate a form with a handler incompatible with the submitted data.
 
-Many external libraries must also adhere to a resource usage protocol, in order to ensure correct operations. Since such libraries do not have as expressive a type system as \idris{}, however, incorrect usage is still possible, for example by developers forgetting to release acquired resources or failing to initialise a library correctly. By creating high-level bindings to these libraries, however, we may statically enforce these resource-usage protocols, ensuring that the libraries are used correctly. Whilst previous work has demonstrated that this is possible through the use of embedded DSLs \cite{} and parameterised algebraic effects \cite{brady:effects}, this paper has provided more substantial examples of real-world applications. 
+Many external libraries must also adhere to a resource usage protocol, in order to ensure correct operations. Since such libraries do not have as expressive a type system as \idris{}, however, incorrect usage is still possible, for example by developers forgetting to release acquired resources or failing to initialise a library correctly. By creating high-level bindings to these libraries, however, we may statically enforce these resource-usage protocols, ensuring that the libraries are used correctly. Whilst previous work has demonstrated that this is possible through the use of embedded DSLs \cite{brady:edsl} and parameterised algebraic effects \cite{brady:effects}, this paper has provided more substantial examples of real-world applications. 
 
 In particular, the framework guarantees that it is not possible for CGI to produce an internal server error due to content being written to the remote host prior to headers. With regard to database access, we may statically guarantee that library calls are made in the correct order, and calls to retrieve rows of data are made only when more data is available. Additionally, by recording any failures in the resource associated with the database effect, we may ensure that any failures at certain stages in the process may be correctly dealt with, and not propagate to further library calls---if a prepared statement fails to compile, for example, the framework guarantees that it will not be executed, without causing a fatal runtime error.
 
@@ -908,6 +989,10 @@ We have shown that embedded domain-specific languages using dependent types and 
 There are many other applications which make use of specific resource usage protocols, for example popular libraries such as \textit{libgcrypt}\footnote{\texttt{http://directory.fsf.org/wiki/Libgcrypt}}. Applying a similar approach would allow for sensitive programs requiring cryptographic routines to be written using a language with full dependent types, in turn adding an extra layer of confidence in their security. 
 
 Whilst the use of CGI allows for experimenting with the use of dependent types in a real-world scenario such as web programming, there remain practical considerations about its scalability, as a separate process must be created for each individual request. We believe that the use of FastCGI may alleviate this, but ultimately, we would like to create a web server written in \idris{}, which would make more efficient usage of resources. 
+
+Since at this stage we have concentrated on the use of dependent types for enforcing resource usage protocols and type-safe form handling, we currently handle the generation of HTML in an unstructured manner. Future work will entail a DOM library to facilitate the generation and manipulation of HTML, in turn giving stronger guarantees about its correctness. Other planned features include a template system, allowing for web pages to be automatically generated from data, and an object-relational mapping system which will allow users to manipulate records which can then be automatically written to the database, instead of having to update tables manually via SQL queries.
+
+Type providers, as originally implemented in F\# \cite{msr:tp}, are an interesting method by which external data sources may be used to import external information, such that it may be used in compilation. Through the use of this technique, it becomes possible to make use of the extra type information in order to statically ensure the validity of artefacts such as SQL queries and data structures. If data structures within the program do not conform to the schema, then the program will not type-check and as such will produce a compile-time error. This is extended to \idris{} through the implementation of dependent type providers \cite{christiansen:dtp}, which makes use of the fact that types can be calculated by functions to avoid generating extra code in the type provider step. Dependent type providers additionally have stronger safety guarantees as they may not generate unchecked code, but at the same time this is matched by a decrease in expressiveness. Nonetheless, such techniques provide a promising mechanism to verify the semantic soundness of programs and we look to investigate their integration in further work.
 
 Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that more developers may benefit from the extra guarantees afforded by dependent types, resulting in more stable, secure applications.
 % Cryptography bindings would be really good.
