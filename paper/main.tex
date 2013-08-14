@@ -71,17 +71,30 @@
 %\subtitle{Using Embedded Domain-Specific Languages to Improve Confidence in Web Applications}
 
 \authorinfo{Simon Fowler \and Edwin Brady}
-           {School of Computer Science \\ University of St Andrews \\ St Andrews \\ Scotland}
+           {School of Computer Science, University of St Andrews, St Andrews, Scotland}
            {Email: \{sf37, ecb10\}@st-andrews.ac.uk}
 
 \maketitle
 
 \begin{abstract}
-Dependently-typed languages allow much expressive types to be used within programs, in turn allowing easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker and additional proofs may have to be specified by a user.
+Dependently-typed languages allow for much expressive types to be used within
+programs in turn allowing easier reasoning about the operation of such
+programs. Stronger specifications do however bring with them the disadvantage
+that it becomes increasingly difficult to write programs that are accepted by
+the type checker and additional proofs may have to be specified by a user.
 
-Embedded domain-specific languages (EDSLs) address this problem by introducing a layer of abstraction over more specific underlying types, allowing domain-specific code to be written in high-level languages which use dependent types to enforce certain invariants without additional proof obligations. 
+Embedded domain-specific languages (EDSLs) address this problem by introducing
+a layer of abstraction over more specific underlying types, allowing
+domain-specific code to be written in high-level languages which use dependent
+types to enforce certain invariants without additional proof obligations. 
 
-In this paper, we apply this technique to web programming, and introduce an EDSL to facilitate the creation and handling of web forms which retain type information, reducing the scope for programmer error and attacks such as SQL injection. We also show how EDSLs may be constructed to enforce resource usage protocols associated with common web operations such as CGI, database access and session handling. 
+In this paper, we apply this technique to web programming, and introduce an
+EDSL, to facilitate the creation and handling of web forms which retain type
+information, reducing the scope for programmer error and attacks such as SQL
+injection. We also show how to enforce resource usage
+protocols associated with common web operations such as CGI, database access
+and session handling.  
+
 \end{abstract}
 
 %\category{CR-number}{subcategory}{third-level}
@@ -95,19 +108,41 @@ In this paper, we apply this technique to web programming, and introduce an EDSL
 %keyword1, keyword2
 
 \section{Introduction}
-Web applications, whilst ubiquitous, are also prone to incorrect construction and security exploits such as SQL injection \cite{owasp:sqli} or cross-site scripting \cite{owasp:xss}. Security breaches using such exploits are far-reaching, and high profile cases involve large corporations such as Sony, who suffered a well-publicised and extremely costly SQL Injection breach in 2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012 \cite{imperva:yahoo}. 
 
-Many web applications are written in dynamically-checked scripting languages such as PHP, Ruby or Python, which facilitate rapid development \cite{w3techs:webpls}. A significant drawback, however, is that such languages do not provide  the same static guarantees about runtime behaviour afforded by programs with more expressive, static type systems, instead relying on extensive unit testing to ensure correctness and security. 
+Web applications, whilst ubiquitous, are also prone to incorrect construction
+and security exploits such as SQL injection \cite{owasp:sqli} or cross-site
+scripting \cite{owasp:xss}. Security breaches using such exploits are
+far-reaching, and high profile cases involve large corporations such as Sony,
+who suffered a well-publicised and extremely costly SQL Injection breach in
+2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012
+\cite{imperva:yahoo}. 
+
+Many web applications are written in dynamically-checked scripting languages
+such as PHP, Ruby or Python, which facilitate rapid development
+\cite{w3techs:webpls}. A significant drawback, however, is that such languages
+do not provide  the same static guarantees about runtime behaviour afforded by
+programs with more expressive, static type systems, instead relying on
+extensive unit testing to ensure correctness and security. 
 
 %%------- EXAMPLE
-Allow us to consider a simple, traditional database access routine, written in PHP, where we wish to obtain the name and address of every employee working in a given department, \texttt{\$dept}. We firstly construct an object representing a database connection, where the arguments are the database host, user, password and name respectively:
+Let us consider a simple database access routine, written in
+PHP, where we wish to obtain the name and address of every employee working in
+a given department, \texttt{\$dept}. We firstly construct an object
+representing a database connection, where the arguments are the database host,
+user, password and name respectively:
+
+
 %
 \begin{Verbatim}
 $conn = new mysqli("localhost", "username", 
                     "password", "db");
 \end{Verbatim}
 %
-We must subsequently check to see if the connection was successful, and cease execution of the database routine if so. Of course, this check is optional, so it would be perfectly possible to omit the check: this would, however, cause problems with later execution steps.
+We then check to see if the connection was successful, and exit
+if not.  This check is optional, so
+it would be possible to omit it. However, this would cause
+problems with later steps.
+
 %
 \begin{Verbatim}
   if (mysqli_connect_errno()) {
@@ -115,14 +150,20 @@ We must subsequently check to see if the connection was successful, and cease ex
   }
 \end{Verbatim}
 %
-We then create a prepared statement detailing our query, and bind the \texttt{`dept'} value:
+We then create a prepared statement detailing our query, and bind the
+\texttt{`dept'} value:
+
 \begin{Verbatim}
   $stmt = $conn->prepare("SELECT `name`, `address` 
      FROM `staff` WHERE `dept` = ?);
   $stmt->bind_param('s', $dept);
 \end{Verbatim}
 %
-After the parameters have been bound, we must execute the statement, assign variables into which results will be stored, and fetch each row in turn. At this point, a developer may forget to execute the statement before beginning to fetch results or may have forgotten to bind the parameters to the statement:
+After the parameters have been bound, we execute the statement, assign
+variables into which results will be stored, and fetch each row in turn. At
+this point, a developer may forget to execute the statement before beginning to
+fetch results or may have forgotten to bind the parameters to the statement:
+
 %
 \begin{Verbatim}
   $stmt->execute();
@@ -132,33 +173,81 @@ After the parameters have been bound, we must execute the statement, assign vari
   }
 \end{Verbatim}
 %
-Finally, once the statement and connection are no longer needed, they should be closed in order to discard the associated resources:
+Finally, once the statement and connection are no longer needed, they should be
+closed in order to discard the associated resources:
+
 %
 \begin{Verbatim}
   $stmt->close();
   $conn->close();
 \end{Verbatim}
 %
-Even in this small example, there exists a specific resource usage protocol. Firstly, a connection to the database must be opened. The object-oriented style used in the example encapsulates this to an extent, as the object must be created in order for operations to be performed, however it is less obvious in a procedural version of the code. Secondly, a prepared statement is created, using the raw SQL and placeholders to which variables are later bound. The statement is then executed, and each row is retrieved from the database. Finally, the resources are freed. 
+Even in this small example, there exists a specific resource usage protocol.
+Firstly, a connection to the database must be opened. The object-oriented style
+used in the example encapsulates this to an extent, as the object must be
+created in order for operations to be performed, however it is less obvious in
+a procedural version of the code. Secondly, a prepared statement is created,
+using the raw SQL and placeholders to which variables are later bound. The
+statement is then executed, and each row is retrieved from the database.
+Finally, the resources are freed. 
 
-There is, however, no way to statically guarantee that this protocol is adhered to. A developer may, for example, accidentally close a statement whilst still retrieving rows, which would cause a runtime error. Similarly, a programmer may omit closing the statement or connection, which can lead to substantial problems such as handle leaks in longer-running server applications.
+Problems may arise if the protocol is not followed correctly.
+A developer may, for example, accidentally close a statement whilst still
+retrieving rows, which would cause a runtime error. Similarly, a programmer may
+omit closing the statement or connection, which can lead to
+problems such as resource leaks in longer-running server applications.
+However, in conventional programming languages, there is no way to check
+automatically that a protocol is followed.
 
-An alternative approach is to ensure that a program is semantically sound before it is run. Through the use of \textit{dependent types}, it is possible to impose arbitrarily strong specifications on programs, requiring that these specifications are fulfilled prior to being accepted by a type checker. A large drawback of this, however, is that automatic verification by the compiler is often impossible, requiring additional proofs to be specified by the developer. This severely limits the uptake of dependently-typed languages in real-world settings.
+In contrast, the use of \textit{dependent types} makes it possible
+to specify a program's behaviour precisely, and to check that a 
+specification is followed.
+%
+The difficulty is 
+that automatic verification by a compiler can be difficult or
+often impossible, requiring additional proofs to be given by the programmer.
 
-This complexity can be ameliorated through the use of \textit{embedded domain-specific languages} (EDSLs), which aim to abstract away from the complexity of the underlying dependent type mechanisms, allowing users to write verfied domain-specific code without having to consider the underlying verification mechanisms.   %TODO: rephrase this
+This complexity can be ameliorated through the use of \textit{embedded
+domain-specific languages} (EDSLs), which aim to abstract away the
+complexity of the underlying type system. EDSLs allow domain experts to
+focus on a problem domain, rather than the specific details of their
+solution.
 
-\idris{} \cite{brady2011idris} is a language with full dependent types, and extensive support for embedded domain-specific languages through ad-hoc syntax overloading and syntax macros. Through the use of \idris{}, and the \texttt{Effects} framework \cite{brady:effects}, we present a dependently-typed web framework, which allows for the construction of programs with additional guarantees about correctness and security, whilst minimising the increase in development complexity. 
+\idris{} \cite{brady2011idris} is a language with full dependent types, and
+extensive support for EDSLs through overloading and syntax macros. Through the
+use of \idris{}, and a framework for describing resource protocols using
+\emph{algebraic effects}~\cite{brady:effects}, we
+present a dependently-typed web framework, which allows the construction of
+programs with additional guarantees about correctness and security, whilst
+minimising the increase in development complexity. 
 
 \subsection{Contributions}
-The primary contribution of this paper is the application of previous work to show that dependent types may be used to provide stronger static guarantees about the correctness and security of web applications, whilst minimising additional development complexity. In particular:
+The primary contribution of this paper is the application of 
+dependent types may to provide strong static guarantees
+about the correctness and security of web applications, whilst minimising
+additional development complexity. In particular, we present:
 
 \begin{itemize}
-\item A form-handling mechanism, which preserves type information and therefore increases applications' resilience to attacks such as SQL injection.
-\item Representations of CGI, SQLite and a simple session handler as \textit{algebraic effects}, allowing programs to be accepted only when they adhere to specific resource usage protocols.
-\item A message board application making use of the framework, and showing that the framework may be used for practical applications.
+\item A form-handling mechanism, which preserves type information and
+manages user input, therefore
+increasing applications' resilience to attacks such as SQL injection.
+
+\item Representations of CGI, Databases and sessions as
+\textit{algebraic effects}, allowing programs to be accepted only when they
+follow clearly defined resource usage protocols.
+
+\item A practical demonstration of the framework, a message board application.
+
 \end{itemize}
 
-We structure the remainder of this paper as follows. We provide a brief overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain how this may be used to ensure adherence to resource usage protocols for CGI, SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for type-safe form handling in Section ~\ref{form}; and discuss the larger example of a message board system making use of these components in Section ~\ref{messageboard}.
+We structure the remainder of this paper as follows. We provide a brief
+overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain
+how this may be used to ensure adherence to resource usage protocols for CGI,
+SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for
+type-safe form handling in Section ~\ref{form}, implemented using
+\texttt{Effects}; and discuss the larger example
+of a message board system making use of these components in Section
+~\ref{messageboard}.
 
 The code used to implement the framework and all associated examples used in this paper is available online at \url{http://www.github.com/SimonJF/IdrisWeb}.
 % =================================================
@@ -166,34 +255,179 @@ The code used to implement the framework and all associated examples used in thi
 
 \section{An overview of the \texttt{Effects} framework}
 \label{effects}
-\texttt{Effects} is an EDSL which handles side-effects such as database access as \textit{algebraic effects}, allowing greater code modularity. This section is intended to serve as a brief introduction to the framework; for more information, see \cite{brady:effects}.
 
-An effect is represented as an instance of the \texttt{EFFECT} type. Such instances may be associated with a \textit{resource}, 
-Describing a program in the \texttt{Effects} library is achieved using the following data type:
+\texttt{Effects}~\cite{brady:effects} is an \idris{} library which handles
+side-effects such as state, exceptions, and I/O as \emph{algebraic
+effects}~\cite{Plotkin2009}. In particular, it supports parameterising effects
+by an input and output \emph{state}, which permits effectful programs to track
+the progress of a resource usage protocol. Effectful programs are written
+in a monadic style, with \texttt{do}-notation, with their type stating which
+specific effects are available.
+Effectful
+programs are described using the following data type,
+in the simplest case:
+
 \begin{Verbatim}
-EffM : (m : Type -> Type) ->
-       (es : List EFFECT) ->
-       (es’ : List EFFECT) ->
-       (a : Type) -> Type
+Eff : (m : Type -> Type) ->
+      (es : List EFFECT) -> (a : Type) -> Type
 \end{Verbatim}
-\texttt{EffM} is a type that is parameterised over an execution context (\texttt{m}), a list of effects that the program may use (\texttt{xs}), a list of effects at the end of the program's execution (\texttt{es'}), and a return type (\texttt{a}). The list of input types can be used to ensure that an operation may only be called when the program is in a particular state, and since the list of input effects may differ from the list of output effects, we may modify the resource associated with the state after each operation. This allows us to simply enforce a resource usage protocol, and deviation from this protocol will result in a compile-time error.
 
-Implementing a new effect involves creating a new algebraic data type, of kind \texttt{Effect}, which describes the available operations and how they modify the resource associated with the effect. Each operation consists of an initial resource \texttt{res}, the resource at the end of the operation \texttt{res'}, and the output type of the operation \texttt{t}.
-%TODO: Execution
+\texttt{Eff} is parameterised over a \emph{computation context}, \texttt{m}, 
+which describes the context in which the effectful program will be run, a
+list of side effects \texttt{es} that the program is permitted to use, and the
+program’s return type \texttt{a}. The name \texttt{m} for the computation context is
+suggestive of a monad, but there is no requirement for it to be so.
+
+For example, the following type carries an integer state,
+throws an exception of type \texttt{String} if the state reaches 100, 
+and runs in a \texttt{Maybe} context:
+
+\begin{Verbatim}
+addState : Eff Maybe [STATE Int, EXCEPTION String] ()
+addState = do val <- get
+              when (val == 100) (raise "State too big")
+              put (val + 1)
+\end{Verbatim}
+
+\subsection{Implementing Effects}
+
+Effects such as state and exception are described as algebraic data types,
+and run by giving \emph{handlers} for specific computation contexts. 
+Effects have a corresponding \emph{resource} (in the case of state, the
+resource is simply the current state). Executing an effectful operation may
+change the resource and return a value:
+
 \begin{Verbatim}
 Effect : Type
-Effect = (res : Type) -> (res’ : Type) ->
-         (t : Type) -> Type
+Effect = (in_res : Type) -> (out_res : Type) -> 
+         (val : Type) -> Type
 \end{Verbatim}
-Operations are made available to users by writing functions with the corresponding \texttt{EffM} type, which may then be used to invoke the operation from within an effectful program.
+
+For example, the state effect is described as follows:
+
 \begin{Verbatim}
-queryPostVar : 
- String -> 
- Eff m [CGI (InitialisedCGI TaskRunning)] 
-   (Maybe String)
-queryPostVar query = (QueryPostVar query)
+data State : Effect where
+     Get :      State a a a
+     Put : b -> State a b ()
 \end{Verbatim}
-Additionally, we define \textit{handlers}, which describe how each operation is interpreted in a given execution context. Finally, \texttt{Effect} instances are promoted to \texttt{EFFECT} instances through the use of the \texttt{MkEff} constructor, which is provided with the initial resource value.
+
+That is, \texttt{Get} returns a value of type \texttt{a} without updating
+the resource type. \texttt{Put} returns nothing, but has the effect of updating
+the resource. In order to make an effect usable, we implement a handler
+for a computation context by making an instance of the following class:
+
+\begin{Verbatim}
+class Handler (e : Effect) (m : Type -> Type) where
+     handle : res -> 
+              (eff : e res res' t) -> 
+              (k: res' -> t -> m a) -> m a
+\end{Verbatim}
+
+The \texttt{handle} function takes the input resource, an effect which may
+update that resource and execute a side-effect, and a continuation \texttt{k}
+which takes the updated resource and the return value of the effect. We use
+a continuation here primarily because there is no restriction on the number of
+times a handler may invoke the continuation (raising an exception, for example,
+will not call the continuation). Reading and updating states in handled
+for all computation contexts \texttt{m} as follows:
+
+\begin{Verbatim}
+instance Handler State m where
+     handle st Get     k = k st st
+     handle st (Put n) k = k n ()
+\end{Verbatim}
+
+Finally, we promote \texttt{State} into a concrete effect \texttt{STATE}, and
+the \texttt{Get} and \texttt{Put} operations into functions in \texttt{Eff}, as
+follows:
+
+\begin{Verbatim}
+STATE : Type -> EFFECT
+STATE t = MkEff t State
+
+get : Eff m [STATE x] x
+get = Get 
+
+put : x -> Eff m [STATE x] ()
+put val = Put val
+\end{Verbatim}
+
+A concrete effect is simply an algebraic effect type paired with its current
+resource type. This, and other
+technical details, are explained in full elsewhere~\cite{brady:effects}.
+For the purposes of this paper, it suffices to know how to describe and
+handle new algebraic effects.
+
+\subsection{Resource Protocols as Effects}
+
+More generally, a program might modify the set of effects available.
+This might be desirable for several reasons, such as adding a new
+effect, or to update an index of a dependently typed state. In this
+case, we describe programs using the \texttt{EffM} data type:
+
+\begin{Verbatim}
+EffM : (m : Type -> Type) ->
+       (es : List EFFECT) -> (es' : List EFFECT) ->
+       (a : Type) -> Type
+\end{Verbatim}
+
+\texttt{EffM} is parameterised over the context and type as before, but
+separates input effects (\texttt{es}) from output effects (\texttt{es'}). 
+In fact, \texttt{Eff}
+is defined in terms of \texttt{EffM}, with equal input/output effects.
+We can use this to describe how effects follow resource protocols. A simple
+example is a file access protocol, where a file must be opened before it
+is read or written, and a file must be closed on exit:
+
+\begin{Verbatim}
+data FileIO : Effect where
+     Open  : String -> (m : Mode) -> 
+             FileIO () (OpenFile m) ()
+     Close : FileIO (OpenFile m) () ()
+
+     ReadLine  : FileIO (OpenFile Read)  
+                        (OpenFile Read) String
+     WriteLine : String -> 
+                 FileIO (OpenFile Write) 
+                        (OpenFile Write) ()
+     EOF       : FileIO (OpenFile Read)  
+                        (OpenFile Read) Bool
+\end{Verbatim}
+
+Note that the types of the input and output resources describes how resource
+state changes in each operation: opening a file changes an empty resource to
+a resource containing an open file; reading a line is only possible if the
+resoource is a file open for reading, etc.
+The handler for this effect for an \texttt{IO} computation context will
+execute the required primitive I/O actions, as well as throwing an exception
+if any operation fails.
+
+The following program type checks, and therefore implicitly carries 
+a proof that the file resource protocol is followed correctly:
+
+\begin{Verbatim}
+testFile : Eff IO [FILE_IO (), STDIO] () 
+testFile = catch (do open "testFile" Read
+                     str <- readLine
+                     close
+                     putStrLn str)
+                 (\err => putStrLn ("Error: " ++ show err))
+\end{Verbatim}
+
+
+The type of \texttt{testFile} states
+that File I/O and console I/O are available effects, and in particular that
+the resource associated with the File I/O will be in the same state on entry
+and exit.
+Therefore, attempting to write to the file, or failing to open or close the
+file, would cause a \emph{compile-time} error. 
+
+We will use this technique extensively
+throughout this paper: describe a resource usage protocol in terms of
+state transitions; implement an effect which captures that protocol; implement
+programs which, by using this effet, implicitly carry a proof that the resource
+protocol has been correctly followed.
+
 
 % =================================================
 % =================================================
@@ -249,10 +483,21 @@ data CGIStep = Initialised
 data InitialisedCGI : CGIStep -> Type where
   ICgi : CGIInfo -> InitialisedCGI s
 \end{Verbatim}
-Figure ~\ref{fig:cgistates} shows the states through which the CGI program progresses. Each operation performed in an effectful program requires the resource to be of a certain type, and the completion of the operation may alter the type or value of the resource.
+Figure~\ref{fig:cgistates} shows the states through which the CGI program
+progresses, and Figure~\ref{fig:cgieffect} shows how this is represented
+as a dependent algebraic effect. Each operation performed in an effectful
+program requires the resource to be of a certain type, and the completion of
+the operation may alter the type or value of the resource.
 
-Upon creation, the CGI application is uninitialised, meaning that the environment variables and request have not been retrieved. The only operation that can be performed in this state is initialisation: by calling \texttt{initialise}, a CGIInfo record is populated, and the state transitions to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the \texttt{Cgi} effect, and involves transitioning from the uninitialised state to the initialised state.
+Upon creation, the CGI application is uninitialised, meaning that the
+environment variables and request have not been retrieved. The only operation
+that can be performed in this state is initialisation: by calling
+\texttt{initialise}, a CGIInfo record is populated, and the state transitions
+to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the
+\texttt{Cgi} effect, and involves transitioning from the uninitialised state to
+the initialised state.
 
+\begin{figure}[h]
 \begin{Verbatim}
 data Cgi : Effect where
     Init : Cgi () (InitialisedCGI Initialised) ()
@@ -273,6 +518,10 @@ data Cgi : Effect where
                        Cgi (InitialisedCGI TaskRunning) 
                            (InitialisedCGI TaskRunning) a
 \end{Verbatim}
+\caption{CGI Effect}
+\label{fig:cgieffect}
+\end{figure}
+
 Additional operations, including those to query POST and GET variables, are omitted in the interest of brevity.
 
 User code executes in the \texttt{TaskRunning} state. Several operations, such as querying the POST and GET variables, are available in this state, alongside functions to output data to the web page and append data to the response headers. It is important to note, that at this stage nothing is written to the page, with the \texttt{output} and \texttt{addHeader} functions instead modifying the CGIInfo record. This data may then be printed at the end of the program's execution, in accordance with the resource usage protocol.
@@ -345,8 +594,13 @@ SQLite\footnote{\texttt{http://www.sqlite.org}} is a lightweight SQL database en
 The creation, preparation and execution of SQL queries has a specific usage protocol, with several possible points of failure. Failure is handled in traditional web applications by the generation of exceptions, which may be handled in the program.
 Handling such exceptions is often optional, however, and in some cases unhandled errors may cause a deployed web application to display an error to the user. Such errors can be used to determine the structure of an insecure SQL query, and are often used by attackers to determine attack vectors for SQL injection attacks.
 
-Figure ~\ref{fig:sqlitestates} shows a resource usage protocol for database access, which we have implemented for the SQLite library. This is encapsulated by the \texttt{Sqlite} effect; we again omit some operations, such as those to bind and retrieve data types other than \texttt{String}, in the interest of brevity.
+Figure~\ref{fig:sqlitestates} shows a resource usage protocol for database
+access, which we have implemented for the SQLite library. This is encapsulated
+by the \texttt{Sqlite} effect (Figure \ref{fig:dbeffect}; we again omit some operations, such as those to
+bind and retrieve data types other than \texttt{String}, in the interest of
+brevity.
 
+\begin{figure}[h]
 \begin{Verbatim}[samepage]
 data Sqlite : Effect where
   OpenDB : 
@@ -388,6 +642,10 @@ data Sqlite : Effect where
            (SQLiteRes PreparedStatementExecuting)
            StepResult
 \end{Verbatim}
+\caption{Database Effect}
+\label{fig:dbeffect}
+\end{figure}
+
 There are three main phases involved in the usage of the SQLite protocol: connection to the database, preparation of a query, and execution of the query. This is reflected in the associated resource \texttt{SQLiteRes}, which again is parameterised by the current protocol state.
 \begin{Verbatim}
 data SQLiteRes : Step -> Type where
@@ -498,6 +756,8 @@ A major strength of the \texttt{Effects} library is that it allows for simple co
 
 We implement this by having a SQLite database, containing two tables: \texttt{session}, which stores session keys and their associated expiry dates, and \texttt{sessiondata}, which contains the data associated with each session. A datum associated with the session is described as a tagged union containing one of the primitive types \texttt{String}, \texttt{Bool} or \texttt{Int}, which is serialised alongside a type tag for storage in the database.
 %TODO: Fix up the labels
+
+\begin{figure}[h]
 \begin{Verbatim}[samepage]
 data Session : Effect where
   LoadSession : 
@@ -532,6 +792,10 @@ data Session : Effect where
             (SessionRes SessionInitialised) 
             (Maybe SessionData)
 \end{Verbatim}
+\caption{Session Effect}
+\label{fig:sessioneffect}
+\end{figure}
+
 \begin{figure}[htpb!]
 \centering
 \scalebox{0.8}{
@@ -553,9 +817,24 @@ data Session : Effect where
 \caption{Session Handler Resource Usage Protocol}
 \label{fig:sessionstates}
 \end{figure}
-Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated with the session handler. In this application, there exist two states: \texttt{SessionUninitialised}, in which the user may load or create a new session, and \texttt{SessionInitialised}, in which the user may update the representation of the session in memory, serialise the session and write it to the database, or delete the session and invalidate the user's session key. The introduction of these two states ensures that changes are explicitly either written or discarded, eliminating the possibility of a developer updating the session but neglecting to commit it to persistent storage. This, of course, is under the assumption that the process exits cleanly: we attempt to facilitate this by writing total functions where possible.
 
-Much like the SQLite effect, we encapsulate failure by reflecting it in the resource associated with the effect. 
+Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated
+with the session handler, and Figure \ref{fig:sessioneffect} the corresponding
+algebraic effect. In this application, there exist two states:
+In \texttt{SessionUninitialised}, the user may load or create a
+session.
+In \texttt{SessionInitialised}, the user may update the
+representation of the session in memory, serialise the session and write it to
+the database, or delete the session and invalidate the user's session key. The
+introduction of these two states ensures that changes are explicitly either
+written or discarded, eliminating the possibility of a developer updating the
+session but neglecting to commit it to persistent storage. This, of course, is
+under the assumption that the process exits cleanly: we attempt to facilitate
+this by writing total functions where possible.
+
+Much like the SQLite effect, we encapsulate failure by reflecting it in the
+resource associated with the effect. 
+
 \begin{Verbatim}
 data SessionStep = SessionUninitialised
                  | SessionInitialised
@@ -572,19 +851,40 @@ The \texttt{SessionRes} data type is parameterised over the current state, which
 
 \section{Type-aware form handling}
 \label{form}
-Programming web applications often involves processing user data, which may then be used in further effectful computations. Data submitted using a form is transmitted over the internet as a string as part of an HTTP request, which traditionally involves losing associated type information.
+Programming web applications often involves processing user data, which may
+then be used in further effectful computations. Data submitted using a form is
+transmitted over the internet as a string as part of an HTTP request, which
+traditionally involves losing associated type information.
 
-This can in turn increase lead to risks; developers may assume that a data is of a certain type, and therefore discount the possibility that it may have been modified by an attacker. One example would be the traversal of paginated data, in which a form is used to make a request to retrieve the next page of data. This may involve sending an integer detailing the current page, which could be used in a query such as:
+This can in turn lead to risks; developers may assume that data is
+of a certain type, and therefore discount the possibility that it may have been
+modified by an attacker. One example would be the traversal of paginated data,
+in which a form is used to make a request to retrieve the next page of data.
+This may involve sending an integer detailing the current page, which could be
+used in a query such as:
 
 \begin{Verbatim}
 'SELECT `name`, `address` FROM `staff` LIMIT ' + 
        page + ', 5';
 \end{Verbatim}
-The \texttt{page} variable is assumed to be an integer, but may instead be modified by an attacker to include a malicious string which would alter the semantics of the query, allowing an attacker to execute a blind SQL injection attack. % Might be a good idea to cite an SQL injection paper which uses LIMIT clauses here
+The \texttt{page} variable is assumed to be an integer, but may instead be
+modified by an attacker to include a malicious string which would alter the
+semantics of the query, allowing an attacker to execute a blind SQL injection
+attack. % Might be a good idea to cite an SQL injection paper which uses LIMIT
+clauses here
 
-In this section, we present a mechanism by which we introduce a web form DSL for the creation of forms which preserve type information. Once the form has been submitted, retrieved information is passed directly to a developer-specified function for handling, without the need to manually check and deserialise data. 
+In this section, we present a mechanism by which we introduce a DSL
+for the creation of web forms which preserve type information, implemented
+as a dependent algebraic effect. Once the form has
+been submitted, retrieved information is passed directly to a
+developer-specified function for handling, without the need to manually check
+and deserialise data. 
 
-We begin with a simple example of a form which requests a user's name, and echoes it back. Firstly, we define a form handler which echoes back a string provided by the form handler. It has one argument of type \texttt{Maybe String}, which accounts for the possibility that the user may have specified incorrect data within the form.
+We begin with a simple example of a form which requests a user's name, and
+echoes it back. Firstly, we define a form handler which echoes back a string
+provided by the form handler. It has one argument of type \texttt{Maybe
+String}, which accounts for the possibility that the user may have specified
+incorrect data within the form.
 
 \begin{Verbatim}
 sayHello : Maybe String -> 
@@ -630,9 +930,15 @@ cgiHello = do
 main : IO ()
 main = runCGI [initCGIState] cgiHello
 \end{Verbatim}
-When this CGI application is invoked, it will begin by outputting a form to the page, requesting a name from the user. Upon submission of the form, the form handler will be invoked, and the name will be used in the output.
+When this CGI application is invoked, it will begin by outputting a form to the
+page, requesting a name from the user. Upon submission of the form, the form
+handler will be invoked, and the name will be used in the output.
 
-In Sections ~\ref{formcons} and ~\ref{formhandling}, we examine implementation of the form-handling system: namely, the EDSL which allows the creation of forms, and the handling code which deserialises the data and passes it to the user-specified handler function.
+In Sections ~\ref{formcons} and ~\ref{formhandling}, we examine implementation
+of the form-handling system: namely, the effect which allows the creation of
+forms, and the handling code which deserialises the data and passes it to the
+user-specified handler function.  
+
 \subsection{Form Construction}
 \label{formcons}
 Each form element is specified to hold a particular type of data, which is then passed directly as that particular type, assuming that the correct type of data is specified by the user, to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
@@ -653,9 +959,17 @@ interpFormTy FormFloat = Float
 interpFormTy (FormList a) = List (interpFormTy a)
 \end{Verbatim}
 %
-In order to specify a form, we once again use \texttt{Effects}. By recording the type of each form element as it is added in the type of the form, we may statically ensure that the user-supplied handler function is of the correct type to handle the data supplied by the form: the specification of an incompatible handler will result in a compile-time type error.
+In order to specify a form, we once again use \texttt{Effects}. By recording
+the type of each form element as it is added in the type of the form, we may
+statically ensure that the user-supplied handler function is of the correct
+type to handle the data supplied by the form: the specification of an
+incompatible handler will result in a compile-time type error.
 
-\idris{} allows for implicit arguments to be bound across a block of code through \texttt{using} notation. We may therefore parameterise the EDSL over the types associated with each form element, and the effects required by the handler function.
+\idris{} allows for implicit arguments to be bound across a block of code
+through \texttt{using} notation. We may therefore parameterise the 
+form data types over
+the types associated with each form element, and the effects required by the
+handler function.
 
 \begin{Verbatim}
 using (G : List FormTy, E : List WebEffect)
@@ -679,9 +993,17 @@ using (G : List FormTy, E : List WebEffect)
              String -> 
              Form (FormRes G E) (FormRes [] []) String
 \end{Verbatim}
-The implementation of the form EDSL also contains other constructs for additional form elements such as radio buttons and check boxes, but are omitted in the interest of brevity.
+The implementation of the form effect also contains other constructs for
+additional form elements such as radio buttons and check boxes, but are omitted
+in the interest of brevity.
 
-We make use of the resource associated with the EDSL, \texttt{FormRes}, to construct the form. The resource allows us to record the types associated with each form element and the HTML required to display the form. he constructor, \texttt{FR}, requires the number of elements in the form in order to allow for the naming of new elements, the list of element types, the list of effects supported by the handler function, and the currently generated HTML for the form. 
+We make use of the resource associated with the effect, \texttt{FormRes}, to
+construct the form. The resource allows us to record the types associated with
+each form element and the HTML required to display the form. he constructor,
+\texttt{FR}, requires the number of elements in the form in order to allow for
+the naming of new elements, the list of element types, the list of effects
+supported by the handler function, and the currently generated HTML for the
+form. 
 
 By parameterising the resource over a list of the types associated with each element and the effects supported by the handler function, we may ensure that only a handler function that is compatible with the submitted data may be specified. It is necessary to keep track of the element types at both the type and value level as we must use the values in later computations when serialising the handler function. 
 
@@ -693,7 +1015,13 @@ To specify a form instance, we define a function of type \texttt{UserForm}:
   UserForm = EffM m [FORM (FormRes []) 
                           (FormRes [])] String
 \end{Verbatim}
-All forms are required to include a submit button, as mandated by the requirement that the input and output resource contains an empty list of types; this requirement is fulfilled as per the output resource type of the \texttt{AddSubmit} operation. As the creation of a form is a pure function which does not include side effects, we do not restrict the handler to IO as with previously-discussed EDSLs, instead denoting the fact that it may be run in any handler with the implicit variable \texttt{m}.
+All forms are required to include a submit button, as mandated by the
+requirement that the input and output resource contains an empty list of types;
+this requirement is fulfilled as per the output resource type of the
+\texttt{AddSubmit} operation. As the creation of a form is a pure function
+which does not include side effects, we do not restrict the handler to IO as
+with previously-discussed effects, instead denoting the fact that it may be run
+in any handler with the implicit variable \texttt{m}.
 
 Handlers may only be associated with a form if they have argument types corresponding to the types associated with the form elements. Additionally, we wish to name the function in order for it to be serialised, whilst requiring a proof that the specified name is associated with the function. If this were not the case, it would be possible to specify a function which satisfies the type requirement, without guaranteeing that it the serialised data corresponded to that function, thus rendering the check pointless. 
 
@@ -789,7 +1117,10 @@ Finally, we must serialise the argument types, supported effects, and return typ
 
 Although sending details of the handler function to the client may appear to be a security risk, we envisage that the use of symmetric encryption or a cryptographic nonce would alleviate this. Ultimately, we hope to implement a web server with persistent state, which would eliminate the need for serialisation altogether.
 
-Running the form construction EDSL is achieved as an operation of the CGI effect, \texttt{AddForm}, which then outputs the generated HTML to the page. The generated metadata describing the handler function is serialised as a hidden HTML field.
+Running form construction is achieved as an operation of the CGI
+effect, \texttt{AddForm}, which then outputs the generated HTML to the page.
+The generated metadata describing the handler function is serialised as a
+hidden HTML field.
 
 \subsection{Form Handling}
 \label{formhandling}
@@ -958,17 +1289,71 @@ Although we have described a relatively simple application, we have shown that t
 %-----------------------------
 
 \section{Related Work}
-\citet{meijer:cgi} implemented a CGI library which was among the first libraries to handle web scripting monadically, and allows the user to implement application logic without having to consider the low-level details such as parsing in CGI data from the environment, or printing headers to the remote browser. The library also provides support for cookies and basic form handling. 
+\citet{meijer:cgi} implemented a CGI library which was among the first
+libraries to handle web scripting monadically, and allows the user to implement
+application logic without having to consider the low-level details such as
+parsing in CGI data from the environment, or printing headers to the remote
+browser. The library also provides support for cookies and basic form handling. 
 
-\citet{thiemann:wash} further adds the notion of a CGI Session for maintaining state, and provides more sophisticated form-handling methods. In particular, callbacks may be associated with submit buttons, with nameless representations for form inputs. Due to the unavailability of full dependent types in Haskell, however, this implementation does not statically verify the suitability of the callback function for the form inputs. Both implementations of the CGI library, being built upon monads, mean that the use of additional effects such as database access is achieved either through monad transformers or the ability to perform arbitrary IO operations. Both of these approaches are limited---the former does not scale well to multiple effects, and the latter allows for the introduction of errors by allowing the violation of resource usage protocols.
+\citet{thiemann:wash} further adds the notion of a CGI Session for maintaining
+state, and provides more sophisticated form-handling methods. In particular,
+callbacks may be associated with submit buttons, with nameless representations
+for form inputs. Due to the unavailability of full dependent types in Haskell,
+however, this implementation does not statically verify the suitability of the
+callback function for the form inputs. Both implementations of the CGI library,
+being built upon monads, mean that the use of additional effects such as
+database access is achieved either through monad transformers or the ability to
+perform arbitrary IO operations. Both of these approaches are limited---the
+former does not scale well to multiple effects, and the latter allows for the
+introduction of errors by allowing the violation of resource usage protocols.
 
-\citet{plasmeijer:idata} describe an alternative approach to type-safe form handling which does not require the use of dependent types through the \textit{i}nteractive \textit{Data}, or \idata{} abstraction. Instead of processing being triggered by form submission, as in the approach described in this paper, applications created in the \idata{} toolkit are instead edit-driven. This means that upon a component being edited, a computation occurs, given the state of the current form. This is then saved to be used in future computations. Should a user enter invalid data, for example by entering text in a field designated for integers, the change will be reverted. This is demonstrated practically through the use of \idata{} to implement a conference management system \cite{plasmeijer:cms}.
+\citet{plasmeijer:idata} describe an alternative approach to type-safe form
+handling which does not require the use of dependent types through the
+\textit{i}nteractive \textit{Data}, or \idata{} abstraction. Instead of
+processing being triggered by form submission, as in the approach described in
+this paper, applications created in the \idata{} toolkit are instead
+edit-driven. This means that upon a component being edited, a computation
+occurs, given the state of the current form. This is then saved to be used in
+future computations. Should a user enter invalid data, for example by entering
+text in a field designated for integers, the change will be reverted. This is
+demonstrated practically through the use of \idata{} to implement a conference
+management system \cite{plasmeijer:cms}.
 
-The concept of \idata{} is taken further by the introduction of \itasks{} \cite{plasmeijer:itasks}, which make use of a workflow system to allow multiple \idata{} forms to interact with one another. This is achieved through the use of high-level combinators which allow the implementation of concepts such as recurseion, sequence and choice in a scalable fashion. These high-level abstractions are elegant, but the style and syntax differ substantially from a traditional web application. Our approach takes the concept of type-safe input handling and uses it in a more traditional fashion, whilst retaining the type-retention guarantees afforded by \idata{} elements.
+The concept of \idata{} is taken further by the introduction of \itasks{}
+\cite{plasmeijer:itasks}, which make use of a workflow system to allow multiple
+\idata{} forms to interact with one another. This is achieved through the use
+of high-level combinators which allow the implementation of concepts such as
+recurseion, sequence and choice in a scalable fashion. These high-level
+abstractions are elegant, but the style and syntax differ substantially from a
+traditional web application. Our approach takes the concept of type-safe input
+handling and uses it in a more traditional fashion, whilst retaining the
+type-retention guarantees afforded by \idata{} elements.
 
-Ur\/Web \cite{urweb} is a library for the Ur language which makes use of dependent types to enable the generation of provably-correct and secure queries and DOM code, without requiring overly complex types or proofs. Through the use of the Ur\/Web DSL, developers may generate well-typed code from records. By statically verifying the \textit{code generator}, it is therefore possible to assert that the generated code is secure. Such ideas are extremely interesting for the implementation of object-relational mapping, which we hope to implement in the near future.
+Ur\/Web \cite{urweb} is a library for the Ur language which makes use of
+dependent types to enable the generation of provably-correct and secure queries
+and DOM code, without requiring overly complex types or proofs. Through the use
+of the Ur\/Web DSL, developers may generate well-typed code from records. By
+statically verifying the \textit{code generator}, it is therefore possible to
+assert that the generated code is secure. Such ideas are extremely interesting
+for the implementation of object-relational mapping, which we hope to implement
+in the near future.
 
-WebDSL \cite{webdsl} is a domain-specific language written primarily to introduce new abstractions which aim to reduce the amount of boilerplate code that must be written and maintained by developeres. WebDSL is built on top of Java, which often includes a large amount of redundant code such as accessor and mutator functions within entity classes. The Java Persistence API (JPA) \cite{jpa} provides an object-relational mapping through the use of Java 5 annotations, which may then be used to construct database tables. These annotations soon become complex, however, and coupled with redundant boilerplate code, data model declarations may soon become unwieldy. Through the use of WebDSL, these data model declarations can be much more compactly declared, and elaborated into Java code by parsing the data-modelling DSL into an abstract syntax tree, applying rewrite rules, and pretty-printing. WebDSL also applies similar concepts to implement a \textit{template system} for such objects, which allows the data to be used in code generation. We look to implement many of these ideas, but as DSLs embedded within the IdrisWeb framework, as with the form construction EDSL.
+WebDSL \cite{webdsl} is a domain-specific language written primarily to
+introduce new abstractions which aim to reduce the amount of boilerplate code
+that must be written and maintained by developeres. WebDSL is built on top of
+Java, which often includes a large amount of redundant code such as accessor
+and mutator functions within entity classes. The Java Persistence API (JPA)
+\cite{jpa} provides an object-relational mapping through the use of Java 5
+annotations, which may then be used to construct database tables. These
+annotations soon become complex, however, and coupled with redundant
+boilerplate code, data model declarations may soon become unwieldy. Through the
+use of WebDSL, these data model declarations can be much more compactly
+declared, and elaborated into Java code by parsing the data-modelling DSL into
+an abstract syntax tree, applying rewrite rules, and pretty-printing. WebDSL
+also applies similar concepts to implement a \textit{template system} for such
+objects, which allows the data to be used in code generation. We look to
+implement many of these ideas, but as effects within the IdrisWeb
+framework, as with the form construction effect.
 
 %-----------------------------
 %-----------------------------
