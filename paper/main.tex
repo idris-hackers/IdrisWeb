@@ -74,11 +74,24 @@
 \maketitle
 
 \begin{abstract}
-Dependently-typed languages allow for much expressive types to be used within programs in turn allowing easier reasoning about the operation of such programs. Stronger specifications do however bring with them the disadvantage that it becomes increasingly difficult to write programs that are accepted by the type checker and additional proofs may have to be specified by a user.
+Dependently-typed languages allow for much expressive types to be used within
+programs in turn allowing easier reasoning about the operation of such
+programs. Stronger specifications do however bring with them the disadvantage
+that it becomes increasingly difficult to write programs that are accepted by
+the type checker and additional proofs may have to be specified by a user.
 
-Embedded domain-specific languages (EDSLs) address this problem by introducing a layer of abstraction over more specific underlying types, allowing domain-specific code to be written in high-level languages which use dependent types to enforce certain invariants without additional proof obligations. 
+Embedded domain-specific languages (EDSLs) address this problem by introducing
+a layer of abstraction over more specific underlying types, allowing
+domain-specific code to be written in high-level languages which use dependent
+types to enforce certain invariants without additional proof obligations. 
 
-In this paper, we apply this technique to web programming, and introduce an EDSL to facilitate the creation and handling of web forms which retain type information, reducing the scope for programmer error and attacks such as SQL injection. We also show how EDSLs may be constructed to enforce resource usage protocols associated with common web operations such as CGI, database access and session handling. 
+In this paper, we apply this technique to web programming, and introduce an
+EDSL to facilitate the creation and handling of web forms which retain type
+information, reducing the scope for programmer error and attacks such as SQL
+injection. We also show how EDSLs may be constructed to enforce resource usage
+protocols associated with common web operations such as CGI, database access
+and session handling.  
+
 \end{abstract}
 
 %\category{CR-number}{subcategory}{third-level}
@@ -92,19 +105,41 @@ In this paper, we apply this technique to web programming, and introduce an EDSL
 %keyword1, keyword2
 
 \section{Introduction}
-Web applications, whilst ubiquitous, are also prone to incorrect construction and security exploits such as SQL injection \cite{owasp:sqli} or cross-site scripting \cite{owasp:xss}. Security breaches using such exploits are far-reaching, and high profile cases involve large corporations such as Sony, who suffered a well-publicised and extremely costly SQL Injection breach in 2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012 \cite{imperva:yahoo}. 
 
-Many web applications are written in dynamically-checked scripting languages such as PHP, Ruby or Python, which facilitate rapid development \cite{w3techs:webpls}. A significant drawback, however, is that such languages do not provide  the same static guarantees about runtime behaviour afforded by programs with more expressive, static type systems, instead relying on extensive unit testing to ensure correctness and security. 
+Web applications, whilst ubiquitous, are also prone to incorrect construction
+and security exploits such as SQL injection \cite{owasp:sqli} or cross-site
+scripting \cite{owasp:xss}. Security breaches using such exploits are
+far-reaching, and high profile cases involve large corporations such as Sony,
+who suffered a well-publicised and extremely costly SQL Injection breach in
+2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012
+\cite{imperva:yahoo}. 
+
+Many web applications are written in dynamically-checked scripting languages
+such as PHP, Ruby or Python, which facilitate rapid development
+\cite{w3techs:webpls}. A significant drawback, however, is that such languages
+do not provide  the same static guarantees about runtime behaviour afforded by
+programs with more expressive, static type systems, instead relying on
+extensive unit testing to ensure correctness and security. 
 
 %%------- EXAMPLE
-Allow us to consider a simple, traditional database access routine, written in PHP, where we wish to obtain the name and address of every employee working in a given department, \texttt{\$dept}. We firstly construct an object representing a database connection, where the arguments are the database host, user, password and name respectively:
+Let us consider a simple database access routine, written in
+PHP, where we wish to obtain the name and address of every employee working in
+a given department, \texttt{\$dept}. We firstly construct an object
+representing a database connection, where the arguments are the database host,
+user, password and name respectively:
+
+
 %
 \begin{Verbatim}
 $conn = new mysqli("localhost", "username", 
                     "password", "db");
 \end{Verbatim}
 %
-We must subsequently check to see if the connection was successful, and cease execution of the database routine if so. Of course, this check is optional, so it would be perfectly possible to omit the check: this would, however, cause problems with later execution steps.
+We then check to see if the connection was successful, and exit
+if not.  This check is optional, so
+it would be possible to omit it: this would, however, cause
+problems with later steps.
+
 %
 \begin{Verbatim}
   if (mysqli_connect_errno()) {
@@ -112,14 +147,20 @@ We must subsequently check to see if the connection was successful, and cease ex
   }
 \end{Verbatim}
 %
-We then create a prepared statement detailing our query, and bind the \texttt{`dept'} value:
+We then create a prepared statement detailing our query, and bind the
+\texttt{`dept'} value:
+
 \begin{Verbatim}
   $stmt = $conn->prepare("SELECT `name`, `address` 
      FROM `staff` WHERE `dept` = ?);
   $stmt->bind_param('s', $dept);
 \end{Verbatim}
 %
-After the parameters have been bound, we must execute the statement, assign variables into which results will be stored, and fetch each row in turn. At this point, a developer may forget to execute the statement before beginning to fetch results or may have forgotten to bind the parameters to the statement:
+After the parameters have been bound, we execute the statement, assign
+variables into which results will be stored, and fetch each row in turn. At
+this point, a developer may forget to execute the statement before beginning to
+fetch results or may have forgotten to bind the parameters to the statement:
+
 %
 \begin{Verbatim}
   $stmt->execute();
@@ -129,30 +170,71 @@ After the parameters have been bound, we must execute the statement, assign vari
   }
 \end{Verbatim}
 %
-Finally, once the statement and connection are no longer needed, they should be closed in order to discard the associated resources:
+Finally, once the statement and connection are no longer needed, they should be
+closed in order to discard the associated resources:
+
 %
 \begin{Verbatim}
   $stmt->close();
   $conn->close();
 \end{Verbatim}
 %
-Even in this small example, there exists a specific resource usage protocol. Firstly, a connection to the database must be opened. The object-oriented style used in the example encapsulates this to an extent, as the object must be created in order for operations to be performed, however it is less obvious in a procedural version of the code. Secondly, a prepared statement is created, using the raw SQL and placeholders to which variables are later bound. The statement is then executed, and each row is retrieved from the database. Finally, the resources are freed. 
+Even in this small example, there exists a specific resource usage protocol.
+Firstly, a connection to the database must be opened. The object-oriented style
+used in the example encapsulates this to an extent, as the object must be
+created in order for operations to be performed, however it is less obvious in
+a procedural version of the code. Secondly, a prepared statement is created,
+using the raw SQL and placeholders to which variables are later bound. The
+statement is then executed, and each row is retrieved from the database.
+Finally, the resources are freed. 
 
-There is, however, no way to statically guarantee that this protocol is adhered to. A developer may, for example, accidentally close a statement whilst still retrieving rows, which would cause a runtime error. Similarly, a programmer may omit closing the statement or connection, which can lead to substantial problems such as handle leaks in longer-running server applications.
+Problems may arise if the protocol is not followed correctly.
+A developer may, for example, accidentally close a statement whilst still
+retrieving rows, which would cause a runtime error. Similarly, a programmer may
+omit closing the statement or connection, which can lead to
+problems such as resource leaks in longer-running server applications.
+However, in conventional programming languages, there is no way to check
+automatically that a protocol is followed.
 
-An alternative approach is to ensure that a program is semantically sound before it is run. Through the use of \textit{dependent types}, it is possible to impose arbitrarily strong specifications on programs, requiring that these specifications are fulfilled prior to being accepted by a type checker. A large drawback of this, however, is that automatic verification by the compiler is often impossible, requiring additional proofs to be specified by the developer. This severely limits the uptake of dependently-typed languages in real-world settings.
+In contrast, the use of \textit{dependent types} makes it possible
+to specify a program's behaviour precisely, and to check that a 
+specification is followed.
+%
+The difficulty is 
+that automatic verification by a compiler can be difficult or
+often impossible, requiring additional proofs to be given by the programmer.
 
-This complexity can be ameliorated through the use of \textit{embedded domain-specific languages} (EDSLs), which aim to abstract away from the complexity of the underlying dependent type mechanisms, allowing users to write verfied domain-specific code without having to consider the underlying verification mechanisms.   %TODO: rephrase this
+This complexity can be ameliorated through the use of \textit{embedded
+domain-specific languages} (EDSLs), which aim to abstract away the
+complexity of the underlying type system. EDSLs allow domain experts to
+focus on a problem domain, rather than the specific details of their
+solution.
 
-\idris{} \cite{brady2011idris} is a language with full dependent types, and extensive support for embedded domain-specific languages through ad-hoc syntax overloading and syntax macros. Through the use of \idris{}, and the \texttt{Effects} framework \cite{brady:effects}, we present a dependently-typed web framework, which allows for the construction of programs with additional guarantees about correctness and security, whilst minimising the increase in development complexity. 
+\idris{} \cite{brady2011idris} is a language with full dependent types, and
+extensive support for EDSLs through overloading and syntax macros. Through the
+use of \idris{}, and a framework for describing resource protocols using
+\emph{algebraic effects}~\cite{brady:effects}, we
+present a dependently-typed web framework, which allows the construction of
+programs with additional guarantees about correctness and security, whilst
+minimising the increase in development complexity. 
 
 \subsection{Contributions}
-The primary contribution of this paper is the application of previous work to show that dependent types may be used to provide stronger static guarantees about the correctness and security of web applications, whilst minimising additional development complexity. In particular:
+The primary contribution of this paper is the application of 
+dependent types may to provide strong static guarantees
+about the correctness and security of web applications, whilst minimising
+additional development complexity. In particular, we present:
 
 \begin{itemize}
-\item A form-handling mechanism, which preserves type information and therefore increases applications' resilience to attacks such as SQL injection.
-\item Representations of CGI, SQLite and a simple session handler as \textit{algebraic effects}, allowing programs to be accepted only when they adhere to specific resource usage protocols.
-\item A message board application making use of the framework, and showing that the framework may be used for practical applications.
+\item A form-handling mechanism, which preserves type information and
+manages user input, therefore
+increasing applications' resilience to attacks such as SQL injection.
+
+\item Representations of CGI, Databases and sessions as
+\textit{algebraic effects}, allowing programs to be accepted only when they
+follow clearly defined resource usage protocols.
+
+\item A practical demonstration of the framework, a message board application.
+
 \end{itemize}
 
 We structure the remainder of this paper as follows. We provide a brief overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain how this may be used to ensure adherence to resource usage protocols for CGI, SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for type-safe form handling in Section ~\ref{form}; and discuss the larger example of a message board system making use of these components in Section ~\ref{messageboard}.
@@ -163,26 +245,48 @@ The code used to implement the framework and all associated examples used in thi
 
 \section{An overview of the \texttt{Effects} framework}
 \label{effects}
-\texttt{Effects} is an EDSL which handles side-effects such as database access as \textit{algebraic effects}, allowing greater code modularity. This section is intended to serve as a brief introduction to the framework; for more information, see \cite{brady:effects}.
+\texttt{Effects} is an EDSL which handles side-effects such as database access
+as \textit{algebraic effects}, allowing greater code modularity. This section
+is intended to serve as a brief introduction to the framework; for more
+information, see \cite{brady:effects}.
 
-An effect is represented as an instance of the \texttt{EFFECT} type. Such instances may be associated with a \textit{resource}, 
-Describing a program in the \texttt{Effects} library is achieved using the following data type:
+An effect is represented as an instance of the \texttt{EFFECT} type. Such
+instances may be associated with a \textit{resource}, Describing a program in
+the \texttt{Effects} library is achieved using the following data type:
+
 \begin{Verbatim}
 EffM : (m : Type -> Type) ->
        (es : List EFFECT) ->
        (es’ : List EFFECT) ->
        (a : Type) -> Type
 \end{Verbatim}
-\texttt{EffM} is a type that is parameterised over an execution context (\texttt{m}), a list of effects that the program may use (\texttt{xs}), a list of effects at the end of the program's execution (\texttt{es'}), and a return type (\texttt{a}). The list of input types can be used to ensure that an operation may only be called when the program is in a particular state, and since the list of input effects may differ from the list of output effects, we may modify the resource associated with the state after each operation. This allows us to simply enforce a resource usage protocol, and deviation from this protocol will result in a compile-time error.
+\texttt{EffM} is a type that is parameterised over an execution context
+(\texttt{m}), a list of effects that the program may use (\texttt{xs}), a list
+of effects at the end of the program's execution (\texttt{es'}), and a return
+type (\texttt{a}). The list of input types can be used to ensure that an
+operation may only be called when the program is in a particular state, and
+since the list of input effects may differ from the list of output effects, we
+may modify the resource associated with the state after each operation. This
+allows us to simply enforce a resource usage protocol, and deviation from this
+protocol will result in a compile-time error.
 
-Implementing a new effect involves creating a new algebraic data type, of kind \texttt{Effect}, which describes the available operations and how they modify the resource associated with the effect. Each operation consists of an initial resource \texttt{res}, the resource at the end of the operation \texttt{res'}, and the output type of the operation \texttt{t}.
+Implementing a new effect involves creating a new algebraic data type, of kind
+\texttt{Effect}, which describes the available operations and how they modify
+the resource associated with the effect. Each operation consists of an initial
+resource \texttt{res}, the resource at the end of the operation \texttt{res'},
+and the output type of the operation \texttt{t}.
+
 %TODO: Execution
 \begin{Verbatim}
 Effect : Type
 Effect = (res : Type) -> (res’ : Type) ->
          (t : Type) -> Type
 \end{Verbatim}
-Operations are made available to users by writing functions with the corresponding \texttt{EffM} type, which may then be used to invoke the operation from within an effectful program.
+
+Operations are made available to users by writing functions with the
+corresponding \texttt{EffM} type, which may then be used to invoke the
+operation from within an effectful program.
+
 \begin{Verbatim}
 queryPostVar : 
  String -> 
@@ -190,7 +294,11 @@ queryPostVar :
    (Maybe String)
 queryPostVar query = (QueryPostVar query)
 \end{Verbatim}
-Additionally, we define \textit{handlers}, which describe how each operation is interpreted in a given execution context. Finally, \texttt{Effect} instances are promoted to \texttt{EFFECT} instances through the use of the \texttt{MkEff} constructor, which is provided with the initial resource value.
+
+Additionally, we define \textit{handlers}, which describe how each operation is
+interpreted in a given execution context. Finally, \texttt{Effect} instances
+are promoted to \texttt{EFFECT} instances through the use of the \texttt{MkEff}
+constructor, which is provided with the initial resource value.
 
 % =================================================
 % =================================================
