@@ -33,11 +33,11 @@
 %\usepackage{silence}
 \usepackage{pgf}
 \usepackage{tikz}
+\usetikzlibrary{arrows,automata}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 \usepackage{fancyvrb}
 \usepackage[numbers]{natbib}
-\usetikzlibrary{arrows,automata}
 %\WarningsOff
 
 \begin{document}
@@ -49,7 +49,7 @@
 \setlength{\pdfpageheight}{\paperheight}
 \setlength{\pdfpagewidth}{\paperwidth}
 
-\conferenceinfo{CONF 'yy}{Month d--d, 20yy, City, ST, Country} 
+\conferenceinfo{IFL '13}{August 28--31, 2013, Nijmegen, The Netherlands} 
 \copyrightyear{2013} 
 \copyrightdata{978-1-nnnn-nnnn-n/yy/mm} 
 \doi{nnnnnnn.nnnnnnn}
@@ -67,7 +67,8 @@
 \titlebanner{}        % These are ignored unless
 \preprintfooter{}   % 'preprint' option specified.
 
-\title{Correct and Secure Web Programming using Dependent Types and Embedded Domain-Specific Languages}
+\title{Practical Dependently-Typed Programming for the Web}
+\subtitle{Correct and Secure Web Programming using Dependent Types and Embedded Domain-Specific Languages}
 %\subtitle{Using Embedded Domain-Specific Languages to Improve Confidence in Web Applications}
 
 \authorinfo{Simon Fowler \and Edwin Brady}
@@ -77,9 +78,7 @@
 \maketitle
 
 \begin{abstract}
-Dependently-typed languages allow for much expressive types to be used within
-programs in turn allowing easier reasoning about the operation of such
-programs. Stronger specifications do however bring with them the disadvantage
+Dependently-typed languages allow very expressive types to be used during development, in turn facilitating easier reasoning about the operation of programs written in such languages. Stronger type specifications do however bring with them the disadvantage
 that it becomes increasingly difficult to write programs that are accepted by
 the type checker and additional proofs may have to be specified by a user.
 
@@ -89,7 +88,7 @@ domain-specific code to be written in high-level languages which use dependent
 types to enforce certain invariants without additional proof obligations. 
 
 In this paper, we apply this technique to web programming, and introduce an
-EDSL, to facilitate the creation and handling of web forms which retain type
+EDSL to facilitate the creation and handling of web forms which retain type
 information, reducing the scope for programmer error and attacks such as SQL
 injection. We also show how to enforce resource usage
 protocols associated with common web operations such as CGI, database access
@@ -134,8 +133,8 @@ user, password and name respectively:
 
 %
 \begin{Verbatim}
-$conn = new mysqli("localhost", "username", 
-                    "password", "db");
+  $conn = new mysqli("localhost", "username", 
+                     "password", "db");
 \end{Verbatim}
 %
 We then check to see if the connection was successful, and exit
@@ -160,9 +159,8 @@ We then create a prepared statement detailing our query, and bind the
 \end{Verbatim}
 %
 After the parameters have been bound, we execute the statement, assign
-variables into which results will be stored, and fetch each row in turn. At
-this point, a developer may forget to execute the statement before beginning to
-fetch results or may have forgotten to bind the parameters to the statement:
+variables into which results will be stored, and fetch each row in turn. 
+Failure to execute a statement before attempting to fetch rows would cause an error, as would attempting to execute a statement without binding variables to it.
 
 %
 \begin{Verbatim}
@@ -210,8 +208,7 @@ often impossible, requiring additional proofs to be given by the programmer.
 This complexity can be ameliorated through the use of \textit{embedded
 domain-specific languages} (EDSLs), which aim to abstract away the
 complexity of the underlying type system. EDSLs allow domain experts to
-focus on a problem domain, rather than the specific details of their
-solution.
+write verified domain-specific code, with the EDSL itself providing the implicit proof that the written code is correct.
 
 \idris{} \cite{brady2011idris} is a language with full dependent types, and
 extensive support for EDSLs through overloading and syntax macros. Through the
@@ -223,20 +220,20 @@ minimising the increase in development complexity.
 
 \subsection{Contributions}
 The primary contribution of this paper is the application of 
-dependent types may to provide strong static guarantees
+dependent types to provide strong static guarantees
 about the correctness and security of web applications, whilst minimising
 additional development complexity. In particular, we present:
 
 \begin{itemize}
 \item A form-handling mechanism, which preserves type information and
 manages user input, therefore
-increasing applications' resilience to attacks such as SQL injection.
+increasing applications' resilience to attacks such as SQL injection and cross-site scripting.
 
 \item Representations of CGI, Databases and sessions as
-\textit{algebraic effects}, allowing programs to be accepted only when they
+\textit{resource-dependent algebraic effects}, allowing programs to be accepted only when they
 follow clearly defined resource usage protocols.
 
-\item A practical demonstration of the framework, a message board application.
+\item A message board application, demonstrating the usage of the framework.
 
 \end{itemize}
 
@@ -275,7 +272,7 @@ Eff : (m : Type -> Type) ->
 \texttt{Eff} is parameterised over a \emph{computation context}, \texttt{m}, 
 which describes the context in which the effectful program will be run, a
 list of side effects \texttt{es} that the program is permitted to use, and the
-programâ€™s return type \texttt{a}. The name \texttt{m} for the computation context is
+program’s return type \texttt{a}. The name \texttt{m} for the computation context is
 suggestive of a monad, but there is no requirement for it to be so.
 
 For example, the following type carries an integer state,
@@ -425,7 +422,7 @@ file, would cause a \emph{compile-time} error.
 We will use this technique extensively
 throughout this paper: describe a resource usage protocol in terms of
 state transitions; implement an effect which captures that protocol; implement
-programs which, by using this effet, implicitly carry a proof that the resource
+programs which, by using this effect, implicitly carry a proof that the resource
 protocol has been correctly followed.
 
 
@@ -468,7 +465,7 @@ In this section, we show how three such effects; CGI, database access and a simp
 \label{fig:cgistates}
 \end{figure}
 
-CGI is used to invoke an application on a web server, making use of environment variables to convey information gained from an HTTP request and using standard output to communicate with the remote client. Importantly, HTTP headers must be correctly written to the browser prior to any other output; failure to do so will result in an internal server error.
+CGI is used to invoke an application on a web server, making use of environment variables to convey information gained from an HTTP request and using standard output to communicate with the remote client. Importantly, HTTP headers must be correctly written to the browser prior to any other output; failure to do so will result in an internal server error being shown.
 
 A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
 
@@ -485,12 +482,11 @@ data InitialisedCGI : CGIStep -> Type where
 \end{Verbatim}
 Figure~\ref{fig:cgistates} shows the states through which the CGI program
 progresses, and Figure~\ref{fig:cgieffect} shows how this is represented
-as a dependent algebraic effect. Each operation performed in an effectful
+as a resource-dependent algebraic effect. Each operation performed in an effectful
 program requires the resource to be of a certain type, and the completion of
 the operation may alter the type or value of the resource.
 
-Upon creation, the CGI application is uninitialised, meaning that the
-environment variables and request have not been retrieved. The only operation
+Upon creation, the CGI application is uninitialised, meaning that environment variables have not been queried to populate the CGI state. The only operation
 that can be performed in this state is initialisation: by calling
 \texttt{initialise}, a CGIInfo record is populated, and the state transitions
 to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the
@@ -526,7 +522,8 @@ Additional operations, including those to query POST and GET variables, are omit
 
 User code executes in the \texttt{TaskRunning} state. Several operations, such as querying the POST and GET variables, are available in this state, alongside functions to output data to the web page and append data to the response headers. It is important to note, that at this stage nothing is written to the page, with the \texttt{output} and \texttt{addHeader} functions instead modifying the CGIInfo record. This data may then be printed at the end of the program's execution, in accordance with the resource usage protocol.
 
-After the user code has finished execution, control returns to the library code. At this point, the state transitions to TaskCompleted, the headers are written, and the headers are output to the request. Finally, the headers and content are written which completes the process. Since we parameterise the resource over a state, we may ensure that certain operations only happen in a particular prescribed order.
+After the user code has finished execution, control returns to the library code. At this point, the state transitions to TaskCompleted, and the headers are written.
+Finally, the headers and content are written which completes the process. Since we parameterise the resource over a state, we may ensure that certain operations only happen in a particular prescribed order.
 
 In \idris{}, types are first-class, meaning that they may be treated like other terms in computations. We may therefore define the following type synonym, which we may use in order to make use of the CGI framework: 
 \begin{Verbatim}
@@ -598,7 +595,7 @@ Figure~\ref{fig:sqlitestates} shows a resource usage protocol for database
 access, which we have implemented for the SQLite library. This is encapsulated
 by the \texttt{Sqlite} effect (Figure \ref{fig:dbeffect}; we again omit some operations, such as those to
 bind and retrieve data types other than \texttt{String}, in the interest of
-brevity.
+brevity).
 
 \begin{figure}[h]
 \begin{Verbatim}[samepage]
@@ -871,7 +868,7 @@ The \texttt{page} variable is assumed to be an integer, but may instead be
 modified by an attacker to include a malicious string which would alter the
 semantics of the query, allowing an attacker to execute a blind SQL injection
 attack. % Might be a good idea to cite an SQL injection paper which uses LIMIT
-clauses here
+% clauses here
 
 In this section, we present a mechanism by which we introduce a DSL
 for the creation of web forms which preserve type information, implemented
@@ -941,7 +938,7 @@ user-specified handler function.
 
 \subsection{Form Construction}
 \label{formcons}
-Each form element is specified to hold a particular type of data, which is then passed directly as that particular type, assuming that the correct type of data is specified by the user, to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
+Each form element is specified  to hold a particular type of data, which, assuming that the correct type of data is specified by the user, is passed directly to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
 \begin{Verbatim}
 data FormTy = FormString
             | FormInt
@@ -999,7 +996,7 @@ in the interest of brevity.
 
 We make use of the resource associated with the effect, \texttt{FormRes}, to
 construct the form. The resource allows us to record the types associated with
-each form element and the HTML required to display the form. he constructor,
+each form element and the HTML required to display the form. The constructor,
 \texttt{FR}, requires the number of elements in the form in order to allow for
 the naming of new elements, the list of element types, the list of effects
 supported by the handler function, and the currently generated HTML for the
@@ -1018,7 +1015,7 @@ To specify a form instance, we define a function of type \texttt{UserForm}:
 All forms are required to include a submit button, as mandated by the
 requirement that the input and output resource contains an empty list of types;
 this requirement is fulfilled as per the output resource type of the
-\texttt{AddSubmit} operation. As the creation of a form is a pure function
+\texttt{AddSubmit} operation. As the creation of a form is a return ()function
 which does not include side effects, we do not restrict the handler to IO as
 with previously-discussed effects, instead denoting the fact that it may be run
 in any handler with the implicit variable \texttt{m}.
@@ -1032,7 +1029,7 @@ Before associating a handler function with the form, we must specify the effects
                       [FORM (FormRes G effs)] ()
   useEffects effs = (UseEffects effs)
 \end{Verbatim}
-Whilst it is not possible to serialise arbitrary effects due to the associated difficulties with serialising initial resource environments, we allow for three effects to be serialised: \texttt{CGI}, \texttt{SQLITE} and \texttt{SESSION}. This is, however, not an inherent limitation as the \texttt{Effects} library allows for the introduction of additional effects within an effectful computation.
+Whilst it is not possible to serialise arbitrary effects due to the associated difficulties with serialising initial resource environments, we allow for three effects to be serialised: \texttt{CGI}, \texttt{SQLITE} and \texttt{SESSION}. This is, however, not an inherent limitation as the \texttt{Effects} library permits introduction of additional effects within an effectful computation.
 %
 We may specify a handler function of type \texttt{FormHandler}:
 \begin{Verbatim}
@@ -1159,7 +1156,7 @@ main : IO ()
 main = do (runCGI [initCGIState, 
                   InvalidSession, ()] 
            handleRequest)
-          pure ()
+          return ()
 \end{Verbatim}
 We specify a function, \texttt{handleRequest}, which firstly calls \texttt{isHandlerSet} to determine whether submitted form data must be handled. If so, then the form handling routine is called, which executes the corresponding handler function as specified in Section ~\ref{formhandling}. If not, then the \texttt{handleNonFormRequest} function is called, which inspects the GET variables in order to display the correct page.
 \begin{Verbatim}
@@ -1170,7 +1167,7 @@ handleRequest = do
   handler_set <- isHandlerSet
   if handler_set then do
     lift' (handleForm handlers)
-    Effects.pure ()
+    Effects.return ()
   else do
     action <- lift' (queryGetVar "action")
     thread_id <- lift' (queryGetVar "thread_id")
@@ -1211,11 +1208,11 @@ handleNewThread :
                SQLITE ()]  
 handleNewThread (Just title) (Just content) = do 
   withSession (addNewThread title content) notLoggedIn
-  pure ()
+  return ()
 handleNewThread _ _ = do 
   outputWithPreamble "<h1>Error</h1><br />There was 
        an error posting your thread."
-  pure ()
+  return ()
 \end{Verbatim}
 Once we have loaded the session data from the database, we then check whether the \texttt{UserID} variable is set, which demonstrates that a user has successfully logged into the system, and allows us to use the ID in subsequent computations. The database operation to insert the thread into the database is performed by the \texttt{threadInsert} function, which makes use of the \texttt{executeInsert} library function. This function abstracts over the low-level resource usage protocol, enabling for provably-correct database access without the excess boilerplate code. In addition, the function also returns the unique row ID of the last item which was inserted, which may be used in subsequent computations. In the case of the message board, we use this to associate the first post of the thread with the thread being inserted.
 \begin{Verbatim}
@@ -1229,7 +1226,7 @@ threadInsert uid title content = do
   insert_res <- (executeInsert DB_NAME query 
     [(1, DBInt uid), (2, DBText title)]
   case insert_res of
-    Left err => pure False
+    Left err => return False
     Right thread_id => postInsert uid thread_id content
 \end{Verbatim}
 \subsection{Listing Threads}
@@ -1245,7 +1242,7 @@ Once the result set has been retrieved, we may iterate through the results and o
 \begin{Verbatim}
 traverseThreads : ResultSet -> 
   Eff IO [CGI (InitialisedCGI TaskRunning)] ()
-traverseThreads [] = pure ()
+traverseThreads [] = return ()
 traverseThreads (x::xs) = do traverseRow x
                              traverseThreads xs
   where traverseRow : List DBVal -> 
@@ -1259,7 +1256,7 @@ traverseThreads (x::xs) = do traverseRow x
             (show thread_id) ++ "\">" ++ 
             title ++ "</a></td><td>" ++ 
             username ++ "</td></tr>") 
-        traverseRow _ = pure ()
+        traverseRow _ = return ()
 \end{Verbatim}
 \subsection{Authentication}
 Once a user submits the login form, the associated handler queries the database to ascertain whether a user with the given username and password exists through a call to the \texttt{authUser} function. If so, then the session handler is invoked, and a session is initialised with the user ID retrieved from the database. The session ID is then set as a cookie using the CGI effect, so that it may be used in subsequent requests. Any failures, for example with creating a new session or querying the database, are reported to the user.
@@ -1271,16 +1268,16 @@ handleLoginForm (Just name) (Just pwd) = do
       set_sess_res <- setSession uid
       if set_sess_res then do
         lift' (output $ "Welcome, " ++ name)
-        pure ()
+        return ()
       else do
         lift' (output "Could not set session")
-        pure ()
+         return ()
     Right Nothing => do
       lift' (output "Invalid username or password")
-      pure ()
+      return ()
     Left err => do
       lift' (output $ "Error: " ++ err)
-      pure ()
+      return ()
 \end{Verbatim}
 Implementations for the insertion and display of posts, alongside registration, are similar in form to those described above, and are as such omitted from this paper.
 
@@ -1329,14 +1326,18 @@ traditional web application. Our approach takes the concept of type-safe input
 handling and uses it in a more traditional fashion, whilst retaining the
 type-retention guarantees afforded by \idata{} elements.
 
-Ur\/Web \cite{urweb} is a library for the Ur language which makes use of
-dependent types to enable the generation of provably-correct and secure queries
-and DOM code, without requiring overly complex types or proofs. Through the use
-of the Ur\/Web DSL, developers may generate well-typed code from records. By
-statically verifying the \textit{code generator}, it is therefore possible to
-assert that the generated code is secure. Such ideas are extremely interesting
-for the implementation of object-relational mapping, which we hope to implement
-in the near future.
+Ur\/Web \cite{urweb} is a library built for the Ur language, which does not use dependent types but does have a more expressive type system, making extensive use of record types and type-level computation.
+By using these concepts, Ur\/Web may generate provably correct and unexploitable DOM code and SQL queries from records, without requiring developers to supply proofs. 
+In contrast to using runtime code generation, which is prone to obscure code generation errors, Ur\/Web makes use of its static type system to guarantee that metaprograms---in this case, generated SQL and DOM code---must be correct and secure.
+Such ideas regarding the use of static checking of metaprogram generation will be extremely useful when considering an object-relational mapping system, which we hope to implement in the near future. It will also be interesting to see how such concepts may be applied with a yet more expressive type system involving full dependent types.
+%Ur\/Web \cite{urweb} is a library for the Ur language which makes use of
+%dependent types to enable the generation of provably-correct and secure queries
+%and DOM code, without requiring overly complex types or proofs. Through the use
+%of the Ur\/Web DSL, developers may generate well-typed code from records. By
+%statically verifying the \textit{code generator}, it is therefore possible to
+%assert that the generated code is secure. Such ideas are extremely interesting
+%for the implementation of object-relational mapping, which we hope to implement
+%in the near future.
 
 WebDSL \cite{webdsl} is a domain-specific language written primarily to
 introduce new abstractions which aim to reduce the amount of boilerplate code
@@ -1365,7 +1366,7 @@ Our framework, through the use of dependent types, provides several static guara
 
 Many external libraries must also adhere to a resource usage protocol, in order to ensure correct operations. Since such libraries do not have as expressive a type system as \idris{}, however, incorrect usage is still possible, for example by developers forgetting to release acquired resources or failing to initialise a library correctly. By creating high-level bindings to these libraries, however, we may statically enforce these resource-usage protocols, ensuring that the libraries are used correctly. Whilst previous work has demonstrated that this is possible through the use of embedded DSLs \cite{brady:edsl} and parameterised algebraic effects \cite{brady:effects}, this paper has provided more substantial examples of real-world applications. 
 
-In particular, the framework guarantees that it is not possible for CGI to produce an internal server error due to content being written to the remote host prior to headers. With regard to database access, we may statically guarantee that library calls are made in the correct order, and calls to retrieve rows of data are made only when more data is available. Additionally, by recording any failures in the resource associated with the database effect, we may ensure that any failures at certain stages in the process may be correctly dealt with, and not propagate to further library calls---if a prepared statement fails to compile, for example, the framework guarantees that it will not be executed, without causing a fatal runtime error.
+In particular, the framework guarantees that it is not possible for CGI to produce an internal server error due to content being written to the remote host prior to headers. With regard to database access, we may statically guarantee that library calls are made in the correct order, and calls to retrieve rows of data are made only when more data is available. Additionally, by recording any failures in the resource associated with the database effect, we may ensure that any failures at certain stages in the process may be correctly dealt with, and not propagate to further library calls---if a prepared statement fails to compile, for example, the framework guarantees that it will not be executed, without causing a fatal runtime error or memory access violation.
 
 Enforcing resource usage protocols also guards against common programmer errors, saving debugging time by identifying errors at compile time.
 \subsection{Further Work}
@@ -1377,7 +1378,8 @@ Whilst the use of CGI allows for experimenting with the use of dependent types i
 
 Since at this stage we have concentrated on the use of dependent types for enforcing resource usage protocols and type-safe form handling, we currently handle the generation of HTML in an unstructured manner. Future work will entail a DOM library to facilitate the generation and manipulation of HTML, in turn giving stronger guarantees about its correctness. Other planned features include a template system, allowing for web pages to be automatically generated from data, and an object-relational mapping system which will allow users to manipulate records which can then be automatically written to the database, instead of having to update tables manually via SQL queries.
 
-Type providers, as originally implemented in F\# \cite{msr:tp}, are an interesting method by which external data sources may be used to import external information, such that it may be used in compilation. Through the use of this technique, it becomes possible to make use of the extra type information in order to statically ensure the validity of artefacts such as SQL queries and data structures. If data structures within the program do not conform to the schema, then the program will not type-check and as such will produce a compile-time error. This is extended to \idris{} through the implementation of dependent type providers \cite{christiansen:dtp}, which makes use of the fact that types can be calculated by functions to avoid generating extra code in the type provider step. Dependent type providers additionally have stronger safety guarantees as they may not generate unchecked code, but at the same time this is matched by a decrease in expressiveness. Nonetheless, such techniques provide a promising mechanism to verify the semantic soundness of programs and we look to investigate their integration in further work.
+Type providers, as originally implemented in F\# \cite{msr:tp}, are an interesting method by which external data sources may be used to import external information, such that it may be used during compilation. Through the use of this technique, it becomes possible to make use of the extra type information in order to statically ensure the validity of artefacts such as SQL queries and data structures. If data structures within the program do not conform to a given database schema, for example, then the program will not type-check and as such will produce a compile-time error. 
+This is extended to \idris{} through the implementation of dependent type providers \cite{christiansen:dtp}, which makes use of the fact that types can be calculated by functions to avoid generating extra code in the type provider step. Dependent type providers additionally have stronger safety guarantees as they may not generate unchecked code, but at the same time this is matched by a decrease in expressiveness. Nonetheless, such techniques provide a promising mechanism to verify the semantic soundness of programs and we look to investigate their integration in further work.
 
 Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that more developers may benefit from the extra guarantees afforded by dependent types, resulting in more stable, secure applications.
 % Cryptography bindings would be really good.
@@ -1424,4 +1426,3 @@ This work has been supported by the Scottish Informatics and Computer Science Al
 %  ----         ------  ----    ------
 
 %  2013.06.29   TU      0.1--4  comments on permission/copyright notices
-
