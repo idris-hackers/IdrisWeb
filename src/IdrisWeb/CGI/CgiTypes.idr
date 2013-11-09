@@ -2,7 +2,7 @@ module IdrisWeb.CGI.CgiTypes
 
 import Effects
 import Decidable.Equality
-import IdrisWeb.DB.SQLite
+import IdrisWeb.DB.SQLite.SQLite
 import IdrisWeb.Session.Session
 %access public
 -- Types used by the CGI module

@@ -49,6 +49,10 @@ data SQLiteRes : Step -> Type where
   OpenStmt : DBPointer -> StmtPointer -> SQLiteRes s
   ExecutingStmt : DBPointer -> StmtPointer -> StepResult -> SQLiteRes s
 
+
+
+
+
 data Sqlite : Effect where
   -- Opens a connection to the database
   OpenDB : String -> Sqlite () (SQLiteRes ConnectionOpened) Bool
