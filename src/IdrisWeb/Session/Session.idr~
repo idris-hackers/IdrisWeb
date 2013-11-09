@@ -10,10 +10,10 @@
       - Only allow sessions to be sent over an SSL connection
 -}
 module IdrisWeb.Session.Session
-import SQLite
+import IdrisWeb.DB.SQLite.SQLite
 import Effects
-import Parser
-import RandC
+import IdrisWeb.Common.Parser
+import IdrisWeb.Common.Random.RandC
 %access public
 
 -- SessionID should be some long-ish random string (hash?)

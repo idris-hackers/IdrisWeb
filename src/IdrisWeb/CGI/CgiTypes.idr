@@ -1,8 +1,9 @@
 module IdrisWeb.CGI.CgiTypes
+
 import Effects
 import Decidable.Equality
-import SQLite
-import Session
+import IdrisWeb.DB.SQLite.SQLite
+import IdrisWeb.Session.Session
 %access public
 -- Types used by the CGI module
 
@@ -11,12 +12,12 @@ public
 Vars : Type
 Vars = List (String, String)
 
-FormHandler : List EFFECT -> Type
-FormHandler effs = Eff IO effs ()
-
 -- CGI Concrete effect sig
 public
 CGI : Type -> EFFECT
+
+FormHandler : List EFFECT -> Type
+FormHandler effs = Eff IO effs ()
 
 public
 UserForm : Type
@@ -31,7 +32,7 @@ record CGIInfo : Type where
                 (Headers : String) ->
                 (Output : String) -> CGIInfo
 
--- Type of user-defined CGI Actions
+-- Type of user-defined 
 public
 CGIProg : List EFFECT -> Type -> Type
 

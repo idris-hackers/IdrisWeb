@@ -1,5 +1,7 @@
-import CgiTypes
-import Session
+module IdrisWeb.Session.SessionUtils
+import IdrisWeb.CGI.CgiTypes
+import IdrisWeb.CGI.Cgi
+import IdrisWeb.Session.Session
 import Effects
 %access public
 

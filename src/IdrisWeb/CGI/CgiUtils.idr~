@@ -1,4 +1,4 @@
-module IdrisWeb.Effect.Cgi
+module IdrisWeb.Effect.Cgi.CgiUtils
 
 -- Pure functions used by the CGI effects library
 -- SimonJF

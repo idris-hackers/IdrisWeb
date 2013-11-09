@@ -3,7 +3,7 @@
   Graham Hutton.
 -}
 
-module SimpleParser
+module Parser
 
 import Prelude
 import Prelude.Monad

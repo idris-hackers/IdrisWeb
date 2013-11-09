@@ -1,17 +1,16 @@
-module IdrisWeb.Effect.Cgi
+module IdrisWeb.CGI.Cgi
 
 -- CGI Module, making use of the Effects DSL. 
 -- large amount of credit goes to the author of Network.Cgi.
 -- SimonJF
 
 import Effects
-import CgiUtils
-import CgiTypes
---import SimpleParser
-import Parser
+import IdrisWeb.CGI.CgiTypes
+import IdrisWeb.CGI.CgiUtils
+import SimpleParser
 import Decidable.Equality
-import SQLite
-import Session
+import IdrisWeb.DB.SQLite.SQLite
+import IdrisWeb.Session.Session
 import Debug.Trace
 %access public -- for now
 -- %default total
@@ -174,7 +173,7 @@ arg = do a_str <- strToken
               Nothing  => failure $ "Attempted to deserialise nonexistent function type " ++ a_str
 
 ty_list : Parser FormTy
-ty_list = nested_list ||| arg
+ty_list = nested_list <|> arg
  where nested_list : Parser FormTy
        nested_list = do string "list_"
                         xs <- ty_list
@@ -195,11 +194,10 @@ webEff = do e_str <- strToken
                  Nothing => failure $ "Attempted to deserialise nonexistent web effect " ++ e_str
 
 
--- FIXME: This is using an old version of SimpleParser, since the new one has a strange codegen bug with <|> (or one of the other edits, but I think <|>)
 parseFormFn' : Parser (String, MkHandlerFnTy)
 parseFormFn' = do name <- strToken
                   char '.'
-                  args <- many (arg ||| ty_list)
+                  args <- many (arg <|> ty_list)
                   char '.' -- List delimiter
                   effs <- many webEff
                   pure (name, (args, effs))

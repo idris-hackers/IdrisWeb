@@ -1,4 +1,4 @@
-module Main
+module IdrisWeb.Common.Random.RandC
 -- Simple binding to a simple C random number library
 
 %link C "rand_c.o"
