@@ -1,0 +1,9 @@
+all : rand_c.o sqlite3api.o
+
+rand_c.o : rand_c.c rand_c.h
+	gcc -c rand_c.c
+
+sqlite3api.o : sqlite3api.c sqlite3api.h
+	gcc -c sqlite3api.c
+
+
