@@ -12,8 +12,8 @@
 module IdrisWeb.Session.Session
 import IdrisWeb.DB.SQLite.SQLite
 import Effects
-import IdrisWeb.Common.Parser
 import IdrisWeb.Common.Random.RandC
+import SimpleParser
 %access public
 
 -- SessionID should be some long-ish random string (hash?)

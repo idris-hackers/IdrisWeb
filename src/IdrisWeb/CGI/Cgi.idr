@@ -9,7 +9,7 @@ import IdrisWeb.CGI.CgiTypes
 import IdrisWeb.CGI.CgiUtils
 import SimpleParser
 import Decidable.Equality
-import IdrisWeb.DB.SQLite
+import IdrisWeb.DB.SQLite.SQLite
 import IdrisWeb.Session.Session
 import Debug.Trace
 %access public -- for now
