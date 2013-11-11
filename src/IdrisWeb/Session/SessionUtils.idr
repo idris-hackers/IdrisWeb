@@ -2,6 +2,7 @@ module IdrisWeb.Session.SessionUtils
 import IdrisWeb.CGI.CgiTypes
 import IdrisWeb.CGI.Cgi
 import IdrisWeb.Session.Session
+import IdrisWeb.DB.SQLite.SQLiteNew
 import Effects
 %access public
 

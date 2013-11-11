@@ -10,7 +10,7 @@
       - Only allow sessions to be sent over an SSL connection
 -}
 module IdrisWeb.Session.Session
-import IdrisWeb.DB.SQLite.SQLite
+import IdrisWeb.DB.SQLite.SQLiteNew
 import Effects
 import IdrisWeb.Common.Random.RandC
 import SimpleParser
@@ -92,46 +92,44 @@ serialiseSession sd = map (\(key, sdt) => let (tystr, valstr) = showSerialisedVa
 
 -- Retrieves session data as a list of (String, String) k-v pairs.
 -- We marshal this back to the required types in a later function.
-collectResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] SerialisedSession
-collectResults = do
-  step_result <- nextRow
-  case step_result of
-      StepComplete => do -- sess_key <- getColumnText 1
-                         key <- getColumnText 0
-                         val <- getColumnText 1
-                         ty <- getColumnText 2
-                         xs <- collectResults
-                         Effects.pure $ (key, val, ty) :: xs
-      NoMoreRows => Effects.pure []
-      StepFail => Effects.pure []
+collectResults : EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) (SQLiteExecuting ValidRow))] 
+                         [SQLITE (SQLiteExecuting InvalidRow)] 
+                 SerialisedSession
+collectResults = 
+  if_valid then do
+    key <- getColumnText 0
+    val <- getColumnText 1
+    ty <- getColumnText 2
+    step_result <- nextRow
+    xs <- collectResults
+    Effects.pure $ (key, val, ty) :: xs
+  else Effects.pure [] 
 
--- TODO: We should have a separate table for Session ID -> Expiry, and not return the data if
--- the session has expired
-retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either String SerialisedSession)
+
+retrieveSessionData : SessionID -> Eff IO [SQLITE ()] (Either QueryError SerialisedSession)
 retrieveSessionData s_id = do
-  open_db <- openDB DB_NAME
-  if open_db then do
+  conn_res <- openDB DB_NAME
+  if_valid then do
     let sql = "SELECT key, val, ty FROM `sessiondata` WHERE `session_key` = ?"
-    sql_prep_res <- prepareStatement sql
-    if sql_prep_res then do
-      startBind
+    ps_res <- prepareStatement sql
+    if_valid then do
       bindText 1 s_id
       bind_res <- finishBind
-      if bind_res then do 
-        beginExecution
+      if_valid then do 
+        executeStatement
         results <- collectResults
-        finaliseStatement
+        finaliseInvalid
         closeDB
         Effects.pure $ Right results
-      else do 
-        err <- bindFail
-        Effects.pure $ Left err
-    else do 
-      err <- stmtFail
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+      else do
+        let (Left be) = bind_res
+        cleanupBindFail
+        Effects.pure $ Left be
+    else do
+      cleanupPSFail
+      Effects.pure . Left $ getQueryError ps_res
+  else 
+    Effects.pure . Left $ getQueryError conn_res
 
 --removeSessionData : SessionID -> Eff IO [SQLITE ()] 
 
@@ -142,78 +140,74 @@ getInsertArg ((key, val, ty) :: []) = "(\"" ++ key ++ "\", \"" ++ val ++ "\", \"
 getInsertArg ((key, val, ty) :: xs) = "(\"" ++ key ++ "\", \"" ++ val ++ "\", \"" ++ ty ++ "\")" ++ ", " ++ (getInsertArg xs)
  
 
-storeSessionRow : SessionID -> SerialisedSessionEntry -> Eff IO [SQLITE ()] (Either String ())
+storeSessionRow : SessionID -> SerialisedSessionEntry -> Eff IO [SQLITE ()] (Either QueryError ())
 storeSessionRow s_id (key, val, ty) = do
-  open_db <- openDB DB_NAME
-  if open_db then do
+  conn_res <- openDB DB_NAME
+  if_valid then do
     let insert_sql = "INSERT INTO `sessiondata` (`session_key`, `key`, `val`, `ty`) VALUES (?, ?, ?, ?)"
-    sql_prep_res <- prepareStatement insert_sql
-    if sql_prep_res then do
-      startBind
+    ps_res <- prepareStatement insert_sql
+    if_valid then do
       -- Bind the arguments to the prepared statement
       bindText 1 s_id
       bindText 2 key
       bindText 3 val
       bindText 4 ty
       bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        nextRow
-        finaliseStatement
+      if_valid then do
+        executeStatement
+        finalise
         closeDB
         Effects.pure $ Right ()
       else do
-        err <- bindFail
-        Effects.pure $ Left err
+        let (Left be) = bind_res
+        cleanupBindFail
+        Effects.pure $ Left be
     else do
-      err <- stmtFail
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+      cleanupPSFail
+      Effects.pure . Left $ getQueryError ps_res
+  else 
+    Effects.pure . Left $ getQueryError conn_res
   
-storeSessionData : SessionID -> SerialisedSession -> Eff IO [SQLITE ()] (Either String ())
+storeSessionData : SessionID -> SerialisedSession -> Eff IO [SQLITE ()] (Either QueryError ())
 storeSessionData s_id [] = Effects.pure $ Right ()
 storeSessionData s_id (sr :: srs) = do res <- storeSessionRow s_id sr
                                        case res of
                                             Left err => Effects.pure $ Left err
                                             Right () => Effects.pure $ Right ()
 
-removeSession: SessionID -> Eff IO [SQLITE ()] (Either String ())
+removeSession: SessionID -> Eff IO [SQLITE ()] (Either QueryError ())
 removeSession s_id = do
-  open_db <- openDB DB_NAME
-  if open_db then do
+  conn_res <- openDB DB_NAME
+  if_valid then do
     let delete_sql = "DELETE FROM `sessiondata` WHERE `session_key` = ?"
-    sql_prep_res <- prepareStatement delete_sql
-    if sql_prep_res then do
-      startBind
+    ps_res <- prepareStatement delete_sql
+    if_valid then do
       bindText 1 s_id
       bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        nextRow
-        finaliseStatement
+      if_valid then do
+        executeStatement
+        finalise
         closeDB
         Effects.pure $ Right ()
       else do
-        err <- bindFail
-        Effects.pure $ Left err
+        let (Left be) = bind_res
+        cleanupBindFail
+        Effects.pure $ Left be
     else do
-      err <- stmtFail
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+      cleanupPSFail
+      Effects.pure . Left $ getQueryError ps_res
+  else 
+    Effects.pure . Left $ getQueryError conn_res
     
 -- Remove then store
-updateSessionData : SessionID -> SessionData -> Eff IO [SQLITE ()] (Either String ())
+updateSessionData : SessionID -> SessionData -> Eff IO [SQLITE ()] (Either QueryError ())
 updateSessionData s_id sd = do
   del_res <- removeSession s_id
   case del_res of
-       Left err => Effects.pure $ Left ("Error deleting: " ++ err)
+       Left err => Effects.pure $ Left err
        Right () => do store_res <- storeSessionData s_id (serialiseSession sd)
                       case store_res of
-                        Left err' => Effects.pure $ Left ("Error storing: " ++ err')
+                        Left err' => Effects.pure $ Left err'
                         Right () => Effects.pure $ Right ()
 
 

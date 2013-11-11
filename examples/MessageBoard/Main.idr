@@ -1,8 +1,9 @@
 module Main
-import Cgi
-import Session
-import SessionUtils
-import SQLite
+import Effects
+import IdrisWeb.CGI.Cgi
+import IdrisWeb.Session.Session
+import IdrisWeb.Session.SessionUtils
+import IdrisWeb.DB.SQLite.SQLiteNew
 
 ThreadID : Type
 ThreadID = Int
@@ -73,28 +74,30 @@ outputWithPreamble txt = do output htmlPreamble
 -----------
 postInsert : Int -> Int -> String -> Eff IO [SQLITE ()] Bool
 postInsert uid thread_id content = do
-  open_db <- openDB DB_NAME
-  if open_db then do
+  conn_res <- openDB DB_NAME
+  if_valid then do
     let sql = "INSERT INTO `Posts` (`UserID`, `ThreadID`, `Content`) VALUES (?, ?, ?)"
-    stmt_res <- prepareStatement sql
-    if stmt_res then do
-      startBind
+    ps_res <- prepareStatement sql
+    if_valid then do
       bindInt 1 uid
       bindInt 2 thread_id
       bindText 3 content
       bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        nextRow
-        finaliseStatement
+      if_valid then do
+        executeStatement
+        finalise
         closeDB
         Effects.pure True
-      else do bindFail
-              Effects.pure False
-    else do stmtFail
-            Effects.pure False
-  else do connFail
-          Effects.pure False
+      else do
+        cleanupBindFail
+        Effects.pure  False
+    else do
+      cleanupPSFail
+      Effects.pure False
+  else 
+    Effects.pure False
+
+
 
 addPostToDB : Int -> String -> SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning),
                                                        SESSION (SessionRes SessionInitialised),
@@ -160,7 +163,6 @@ addNewThread : String -> String -> SessionData -> EffM IO [CGI (InitialisedCGI T
                                                        SESSION (SessionRes SessionUninitialised),
                                                        SQLITE ()] ()
 addNewThread title content sd = do 
--- TODO: would be nice to abstract this out
   case lookup USERID_VAR sd of
     Just (SInt uid) => do insert_res <- threadInsert uid title content
                           if insert_res then do
@@ -200,51 +202,47 @@ showNewThreadForm = do output htmlPreamble
 -- Registration
 -----------
 
--- UP TO HERE
-insertUser : String -> String -> Eff IO [SQLITE ()] (Either String Int)
+insertUser : String -> String -> Eff IO [SQLITE ()] (Either QueryError Int)
 insertUser name pwd = executeInsert DB_NAME query bind_vals
   where query = "INSERT INTO `Users` (`Username`, `Password`) VALUES (?, ?)"
         bind_vals = [(1, DBText name), (2, DBText pwd)]
 
 
--- Fine up until here
-userExists' : StepResult -> 
-              EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] 
-              [SQLITE ()] (Either String Bool)
-userExists' next_row_res =
-  case next_row_res of
-    StepComplete => do
-      num_rows <- getColumnInt 0
-      finaliseStatement
-      closeDB
-      Effects.pure $ Right (num_rows > 0)
-    _ => do executeFail
-            Effects.pure $ Left "Error executing row count function"
+userExists' : EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) (SQLiteExecuting ValidRow))] 
+              [SQLITE ()] Bool
+userExists' =
+  if_valid then do
+    finaliseValid
+    closeDB
+    Effects.pure True
+  else do
+    finaliseInvalid
+    closeDB
+    Effects.pure False
 
 
-userExists : String -> Eff IO [SQLITE ()] (Either String Bool)
+userExists : String -> Eff IO [SQLITE ()] (Either QueryError Bool)
 userExists username = do
-  conn <- openDB DB_NAME
-  if conn then do
-    let sql = "SELECT count(*) FROM `Users` WHERE `Username` = ?"
-    prep_res <- prepareStatement sql
-    if prep_res then do
-      startBind 
+  conn_res <- openDB DB_NAME
+  if_valid then do
+    let sql = "SELECT * FROM `Users` WHERE `Username` = ?"
+    ps_res <- prepareStatement sql
+    if_valid then do
       bindText 1 username
       bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        next_row_res <- nextRow
-        userExists' next_row_res -- Temporary bug workaround
+      if_valid then do
+        executeStatement
+        res <- userExists'  
+        Effects.pure $ Right res
       else do
-        err <- bindFail
-        Effects.pure $ Left err
+        let (Left be) = bind_res
+        cleanupBindFail
+        Effects.pure $ Left be
     else do
-      err <- stmtFail 
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+      cleanupPSFail
+      Effects.pure . Left $ getQueryError ps_res
+  else 
+    Effects.pure . Left $ getQueryError conn_res
 
 
 handleRegisterForm (Just name) (Just pwd) = do 
@@ -256,7 +254,7 @@ handleRegisterForm (Just name) (Just pwd) = do
       if (not user_exists) then do 
         insert_res <- insertUser name pwd
         case insert_res of
-          Left err => do outputWithPreamble ("Error inserting new user" ++ err)
+          Left err => do outputWithPreamble ("Error inserting new user" ++ (show err))
                          pure ()
           Right insert_res => do outputWithPreamble "User created successfully!"
                                  pure ()
@@ -294,46 +292,43 @@ alreadyLoggedIn _ = do outputWithPreamble "<h1>Error</h1><br />You appear to alr
 -- If the credentials match, return an ID
 -- Maybe consolidate the Maybe UserID into the Either, or possibly keep them
 -- distinct to encapsulate the system error vs auth failure
-authUser' : StepResult -> EffM IO [SQLITE (SQLiteRes PreparedStatementExecuting)] [SQLITE ()] (Either String (Maybe UserID))
-authUser' next_row_res = 
-  case next_row_res of
-    StepComplete => do
-      user_id <- getColumnInt 0
-      finaliseStatement
-      closeDB
-      Effects.pure $ Right (Just user_id)
-    NoMoreRows => do
-      finaliseStatement
-      closeDB
-      Effects.pure $ Right Nothing -- No user with the given credentials
-    _ => do executeFail
-            Effects.pure $ Left "Error executing row count function"
+authUser' : EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) 
+                                    (SQLiteExecuting ValidRow))] 
+                    [SQLITE ()] 
+                    (Either QueryError (Maybe UserID))
+authUser' = 
+  if_valid then do
+    user_id <- getColumnInt 0
+    finaliseValid
+    closeDB
+    Effects.pure $ Right (Just user_id)
+  else do
+    finaliseInvalid
+    closeDB
+    Effects.pure $ Right Nothing
 
-
-authUser : String -> String -> Eff IO [SQLITE ()] (Either String (Maybe UserID))
+authUser : String -> String -> Eff IO [SQLITE ()] (Either QueryError (Maybe UserID))
 authUser username password = do
-  conn <- openDB DB_NAME
-  if conn then do
+  conn_res <- openDB DB_NAME
+  if_valid then do
     let sql = "SELECT `UserID` FROM `Users` WHERE `Username` = ? AND `Password` = ?"
-    prep_res <- prepareStatement sql
-    if prep_res then do
-      startBind 
+    ps_res <- prepareStatement sql
+    if_valid then do
       bindText 1 username
       bindText 2 password 
       bind_res <- finishBind
-      if bind_res then do
-        beginExecution
-        next_row_res <- nextRow
-        authUser' next_row_res
+      if_valid then do
+        executeStatement 
+        authUser' 
       else do
-        err <- bindFail
-        Effects.pure $ Left err
+        let (Left be) = bind_res
+        cleanupBindFail
+        Effects.pure $ Left be
     else do
-      err <- stmtFail 
-      Effects.pure $ Left err
-  else do
-    err <- connFail
-    Effects.pure $ Left err
+      cleanupPSFail
+      Effects.pure . Left $ getQueryError ps_res
+  else 
+    Effects.pure . Left $ getQueryError conn_res
 
 
 setSession : UserID -> Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised), SQLITE ()] Bool
@@ -359,7 +354,7 @@ handleLoginForm (Just name) (Just pwd) = do
       lift' (output "Invalid username or password")
       pure ()
     Left err => do
-      lift' (output $ "Error: " ++ err)
+      lift' (output $ "Error: " ++ (show err))
       pure ()
 
 
@@ -382,19 +377,19 @@ showLoginForm = do output htmlPreamble
 -- Post / Thread Display
 -----------
 
-collectPostResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal) -- (List (String, String))
+collectPostResults : Eff IO [SQLITE (SQLiteExecuting ValidRow)] (List DBVal) -- (List (String, String))
 collectPostResults = do name <- getColumnText 0
                         content <- getColumnText 1
                         pure [DBText name, DBText content]
 -- Gets the posts
-getPosts : Int -> Eff IO [SQLITE ()] (Either String ResultSet)
+getPosts : Int -> Eff IO [SQLITE ()] (Either QueryError ResultSet)
 getPosts thread_id =
   executeSelect DB_NAME query bind_vals collectPostResults
  where query = "SELECT `Username`, `Content` FROM `Posts` NATURAL JOIN `Users` WHERE `ThreadID` = ?"
        bind_vals = [(1, DBInt thread_id)]  
 
 
-collectThreadResults : Eff IO [SQLITE (SQLiteRes PreparedStatementExecuting)] (List DBVal) 
+collectThreadResults : Eff IO [SQLITE (SQLiteExecuting ValidRow)] (List DBVal) 
 collectThreadResults = do thread_id <- getColumnInt 0
                           title <- getColumnText 1
                           uid <- getColumnInt 2
@@ -402,7 +397,7 @@ collectThreadResults = do thread_id <- getColumnInt 0
                           pure [DBInt thread_id, DBText title, DBInt uid, DBText username]
 
 -- Returns (Title, Thread starter ID, Thread starter name)
-getThreads : Eff IO [SQLITE ()] (Either String ResultSet)
+getThreads : Eff IO [SQLITE ()] (Either QueryError ResultSet)
 getThreads = executeSelect DB_NAME query [] collectThreadResults
   where query = "SELECT `ThreadID`, `Title`, `UserID`, `Username` FROM `Threads` NATURAL JOIN `Users`"
 
@@ -419,7 +414,7 @@ printPosts : ThreadID -> CGIProg [SQLITE ()] ()
 printPosts thread_id = do 
   post_res <- lift' (getPosts thread_id)
   case post_res of
-    Left err => do lift' (output $ "Could not retrieve posts, error: " ++ err)
+    Left err => do lift' (output $ "Could not retrieve posts, error: " ++ (show err))
                    Effects.pure ()
     Right posts => do lift' (output "<table>")
                       traversePosts posts
@@ -441,7 +436,7 @@ printThreads : CGIProg [SQLITE ()] ()
 printThreads = do
   thread_res <- getThreads
   case thread_res of
-    Left err => do lift' (output $ "Could not retrieve threads, error: " ++ err)
+    Left err => do lift' (output $ "Could not retrieve threads, error: " ++ (show err))
                    Effects.pure ()
     Right threads => do lift' (output htmlPreamble)
                         lift (Keep (Drop (SubNil))) (output "<table><tr><th>Title</th><th>Author</th></tr>")
