@@ -2,8 +2,8 @@ package idrisweb
 
 opts = "-p effects -p simpleparser"
 sourcedir = src
-modules = IdrisWeb.Common.Random.RandC, IdrisWeb.DB.SQLite.SQLite, IdrisWeb.DB.SQLite.SQLiteCodes, IdrisWeb.CGI.CgiTypes, IdrisWeb.CGI.Cgi, IdrisWeb.CGI.CgiUtils, IdrisWeb.Session.Session, IdrisWeb.Session.SessionUtils
+modules = IdrisWeb.Common.Random.RandC, IdrisWeb.DB.SQLite.SQLiteNew, IdrisWeb.DB.SQLite.SQLiteCodes, IdrisWeb.CGI.CgiTypes, IdrisWeb.CGI.Cgi, IdrisWeb.CGI.CgiUtils, IdrisWeb.Session.Session, IdrisWeb.Session.SessionUtils
 
 makefile = MakefileC
-objs = ranc_c.o, rand_c.h, sqlite3api.o, sqlite3api.h
+objs = rand_c.o, rand_c.h, sqlite3api.o, sqlite3api.h
 
