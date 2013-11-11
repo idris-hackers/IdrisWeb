@@ -1,0 +1,126 @@
+\section{Related Work}
+\citet{meijer:cgi} implemented a CGI library which was among the first
+libraries to handle web scripting monadically, and allows the user to implement
+application logic without having to consider the low-level details such as
+parsing in CGI data from the environment, or printing headers to the remote
+browser. The library also provides support for cookies and basic form handling. 
+
+\citet{thiemann:wash} adds the notion of a CGI Session for maintaining
+state, and provides more sophisticated form-handling methods. In particular,
+callbacks may be associated with submit buttons, with nameless representations
+for form inputs. Due to the unavailability of full dependent types in Haskell,
+however, this implementation does not statically verify the suitability of the
+callback function for the form inputs. Both implementations of the CGI library,
+being built upon monads, mean that the use of additional effects such as
+database access is achieved either through monad transformers or 
+performing arbitrary IO operations. Both of these approaches are limited---the
+former does not scale well to multiple effects, and the latter allows for the
+introduction of errors by allowing the violation of resource usage protocols.
+
+\citet{plasmeijer:idata} describe an alternative approach to type-safe form
+handling through the
+\textit{i}nteractive \textit{Data}, or \idata{} abstraction. Instead of
+processing being triggered by form submission, as in the approach described in
+this paper, applications created in the \idata{} toolkit are 
+edit-driven. This means that upon a component being edited, a computation
+occurs, given the state of the current form. This is saved for
+future computations. Should a user enter invalid data, for example by entering
+text in a field designated for integers, the change will be reverted. This is
+demonstrated practically through the use of \idata{} to implement a conference
+management system \cite{plasmeijer:cms}.
+
+The concept of \idata{} is taken further by the introduction of \itasks{}
+\cite{plasmeijer:itasks}, which make use of a workflow system to allow multiple
+\idata{} forms to interact with one another. This is achieved using
+high-level combinators which allow the implementation of concepts such as
+recursion, sequence and choice in a scalable fashion. These high-level
+abstractions are elegant, but the style and syntax differ substantially from a
+traditional web application. Our approach takes the concept of type-safe input
+handling and uses it in a more traditional fashion, whilst retaining the
+type-retention guarantees afforded by \idata{} elements.
+
+Ur\/Web \cite{urweb} is a library built for the Ur language, which does not use
+full dependent types but does have an expressive type system with 
+record types and type-level computation.  By using these concepts,
+Ur\/Web may generate provably correct and unexploitable DOM code and SQL
+queries from records, without requiring developers to supply proofs.  In
+contrast to using runtime code generation, which is prone to obscure code
+generation errors, Ur\/Web makes use of its static type system to guarantee
+that metaprograms---in this case, generated SQL and DOM code---must be correct
+and secure.  Such ideas regarding the use of static checking of metaprogram
+generation will be extremely useful when considering an object-relational
+mapping system, which we hope to implement in the near future. It will also be
+interesting to see how such concepts may be applied with a yet more expressive
+type system involving full dependent types.
+
+%Ur\/Web \cite{urweb} is a library for the Ur language which makes use of
+%dependent types to enable the generation of provably-correct and secure queries
+%and DOM code, without requiring overly complex types or proofs. Through the use
+%of the Ur\/Web DSL, developers may generate well-typed code from records. By
+%statically verifying the \textit{code generator}, it is therefore possible to
+%assert that the generated code is secure. Such ideas are extremely interesting
+%for the implementation of object-relational mapping, which we hope to implement
+%in the near future.
+
+WebDSL \cite{webdsl} is a domain-specific language written primarily to
+introduce new abstractions which aim to reduce the amount of boilerplate code
+that must be written and maintained by developeres. WebDSL is built on top of
+Java, which often includes a large amount of redundant code such as accessor
+and mutator functions within entity classes. The Java Persistence API (JPA)
+\cite{jpa} provides an object-relational mapping through the use of Java 5
+annotations, which may then be used to construct database tables. These
+annotations soon become complex, however, and coupled with redundant
+boilerplate code, data model declarations may soon become unwieldy. Through the
+use of WebDSL, these data model declarations can be much more compactly
+declared, and elaborated into Java code by parsing the data-modelling DSL into
+an abstract syntax tree, applying rewrite rules, and pretty-printing. WebDSL
+also applies similar concepts to implement a \textit{template system} for such
+objects, which allows the data to be used in code generation. We look to
+implement many of these ideas, but as effects within the IdrisWeb
+framework, as with the form construction effect.
+
+%-----------------------------
+%-----------------------------
+
+\section{Conclusions}
+
+To date,
+dependently-typed languages have remained relatively unused for practical
+purposes. Advances in embedded domain-specific languages
+have allowed many of the advantages of such languages, including the additional
+guarantees given by the successful compilation of a program (assuming the use
+of specific enough types) to be adopted without additional proofs.
+
+Our framework, through the use of dependent types, provides several static
+guarantees. Data submitted by users is inherently unsafe due to the possibility
+of attacks such as SQL injection, and this particular threat is ameliorated due
+to elements to be associated with specific types during form construction. This
+immediately eliminates the possibilities of SQL injection attacks on non-string
+types. Since failures are handled transparently, no runtime errors are output
+to the browser, meaning that attackers may not use such information to aid
+attacks. Additionally, since checking is performed on the types of the form
+elements and the types of arguments accepted by the handler, it is impossible
+to associate a form with a handler incompatible with the submitted data.
+
+Many external libraries must also adhere to a resource usage protocol, in order to ensure correct operations. Since such libraries do not have as expressive a type system as \idris{}, however, incorrect usage is still possible, for example by developers forgetting to release acquired resources or failing to initialise a library correctly. By creating high-level bindings to these libraries, however, we may statically enforce these resource-usage protocols, ensuring that the libraries are used correctly. Whilst previous work has demonstrated that this is possible through the use of embedded DSLs \cite{brady:edsl} and parameterised algebraic effects \cite{brady:effects}, this paper has provided more substantial examples of real-world applications. 
+
+In particular, the framework guarantees that it is not possible for CGI to produce an internal server error due to content being written to the remote host prior to headers. With regard to database access, we may statically guarantee that library calls are made in the correct order, and calls to retrieve rows of data are made only when more data is available. Additionally, by recording any failures in the resource associated with the database effect, we may ensure that any failures at certain stages in the process may be correctly dealt with, and not propagate to further library calls---if a prepared statement fails to compile, for example, the framework guarantees that it will not be executed, without causing a fatal runtime error or memory access violation.
+
+Enforcing resource usage protocols also guards against common programmer errors, saving debugging time by identifying errors at compile time.
+\subsection{Further Work}
+We have shown that embedded domain-specific languages using dependent types and algebraic effects can be used to increase confidence in web applications by providing additional static guarantees about runtime behaviour, but much more can be done using the same approach.
+
+There are many other applications which make use of specific resource usage protocols, for example popular libraries such as \textit{libgcrypt}\footnote{\texttt{http://directory.fsf.org/wiki/Libgcrypt}}. Applying a similar approach would allow for sensitive programs requiring cryptographic routines to be written using a language with full dependent types, in turn adding an extra layer of confidence in their security. 
+
+Whilst the use of CGI allows for experimenting with the use of dependent types in a real-world scenario such as web programming, there remain practical considerations about its scalability, as a separate process must be created for each individual request. We believe that the use of FastCGI may alleviate this, but ultimately, we would like to create a web server written in \idris{}, which would make more efficient usage of resources. 
+
+Since at this stage we have concentrated on the use of dependent types for enforcing resource usage protocols and type-safe form handling, we currently handle the generation of HTML in an unstructured manner. Future work will entail a DOM library to facilitate the generation and manipulation of HTML, in turn giving stronger guarantees about its correctness. Other planned features include a template system, allowing for web pages to be automatically generated from data, and an object-relational mapping system which will allow users to manipulate records which can then be automatically written to the database, instead of having to update tables manually via SQL queries.
+
+Type providers, as originally implemented in F\# \cite{msr:tp}, are an interesting method by which external data sources may be used to import external information, such that it may be used during compilation. Through the use of this technique, it becomes possible to make use of the extra type information in order to statically ensure the validity of artefacts such as SQL queries and data structures. If data structures within the program do not conform to a given database schema, for example, then the program will not type-check and as such will produce a compile-time error. 
+This is extended to \idris{} through the implementation of dependent type providers \cite{christiansen:dtp}, which makes use of the fact that types can be calculated by functions to avoid generating extra code in the type provider step. Dependent type providers additionally have stronger safety guarantees as they may not generate unchecked code, but at the same time this is matched by a decrease in expressiveness. Nonetheless, such techniques provide a promising mechanism to verify the semantic soundness of programs and we look to investigate their integration in further work.
+
+Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that more developers may benefit from the extra guarantees afforded by dependent types, resulting in more stable, secure applications.
+% Cryptography bindings would be really good.
+% Integration with a web server instead of doing everything over CGI
+% Improvements to form handling system
+% Less raw SQL, use get more type-safety by using more complex EDSLs for database access thus further minimising errors

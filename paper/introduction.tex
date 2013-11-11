@@ -1,0 +1,158 @@
+\section{Introduction}
+
+Web applications, whilst ubiquitous, are also prone to incorrect construction
+and security exploits such as SQL injection \cite{owasp:sqli} or cross-site
+scripting \cite{owasp:xss}. Security breaches using such exploits are
+far-reaching, and high profile cases involve large corporations such as Sony,
+who suffered a well-publicised and extremely costly SQL Injection breach in
+2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012
+\cite{imperva:yahoo}. 
+
+Many web applications are written in dynamically-checked scripting languages
+such as PHP, Ruby or Python, which facilitate rapid development
+\cite{w3techs:webpls}. A significant drawback, however, is that such languages
+do not provide  the same static guarantees about runtime behaviour afforded by
+programs with more expressive, static type systems, instead relying on
+extensive unit testing to ensure correctness and security. 
+
+%%------- EXAMPLE
+Let us consider a simple database access routine, written in
+PHP, where we wish to obtain the name and address of every employee working in
+a given department, \texttt{\$dept}. We firstly construct an object
+representing a database connection, where the arguments are the database host,
+user, password and name respectively:
+
+\begin{SaveVerbatim}{conn}
+
+  $conn = new mysqli("localhost", "username", 
+                     "password", "db");
+
+\end{SaveVerbatim}
+\useverb{conn}
+
+\noindent
+We then check to see if the connection was successful, and exit
+if not.  This check is optional, so
+it would be possible to omit it. However, this would cause
+problems with later steps.
+
+\begin{SaveVerbatim}{connerr}
+
+  if (mysqli_connect_errno()) {
+      exit();
+  }
+
+\end{SaveVerbatim}
+\useverb{connerr}
+
+\noindent
+We then create a prepared statement detailing our query, and bind the
+\texttt{`dept'} value:
+
+\begin{SaveVerbatim}{prepare}
+
+  $stmt = $conn->prepare("SELECT `name`, `address` 
+     FROM `staff` WHERE `dept` = ?);
+  $stmt->bind_param('s', $dept);
+
+\end{SaveVerbatim}
+\useverb{prepare}
+
+\noindent
+After the parameters have been bound, we execute the statement, assign
+variables into which results will be stored, and fetch each row in turn. 
+Failure to execute a statement before attempting to fetch rows would cause an error, as would attempting to execute a statement without binding variables to it.
+
+\begin{SaveVerbatim}{stmtexec}
+
+$stmt->execute();
+  $stmt->bind_result($name, $address);
+  while ($stmt->fetch()) {
+    printf("Name: %s, Age: %s", $name, $age);
+  }
+
+\end{SaveVerbatim}
+\useverb{stmtexec}
+
+\noindent
+Finally, once the statement and connection are no longer needed, they should be
+closed in order to discard the associated resources:
+
+\begin{SaveVerbatim}{connclose}
+
+  $stmt->close();
+  $conn->close();
+
+\end{SaveVerbatim}
+\useverb{connclose}
+
+\noindent
+Even in this small example, there exists a specific resource usage protocol.
+Firstly, a connection to the database must be opened. The object-oriented style
+used in the example encapsulates this to an extent, as the object must be
+created in order for operations to be performed, however it is less obvious in
+a procedural version of the code. Secondly, a prepared statement is created,
+using the raw SQL and placeholders to which variables are later bound. The
+statement is then executed, and each row is retrieved from the database.
+Finally, the resources are freed. 
+
+Problems may arise if the protocol is not followed correctly.
+A developer may, for example, accidentally close a statement whilst still
+retrieving rows, which would cause a runtime error. Similarly, a programmer may
+omit closing the statement or connection, which can lead to
+problems such as resource leaks in longer-running server applications.
+However, in conventional programming languages, there is no way to check
+automatically that a protocol is followed.
+
+In contrast, the use of \textit{dependent types} makes it possible
+to specify a program's behaviour precisely, and to check that a 
+specification is followed.
+%
+The difficulty is 
+that automatic verification by a compiler can be difficult or
+often impossible, requiring additional proofs to be given by the programmer.
+
+This complexity can be ameliorated through the use of \textit{embedded
+domain-specific languages} (EDSLs), which aim to abstract away the
+complexity of the underlying type system. EDSLs allow domain experts to
+write verified domain-specific code, with the EDSL itself providing the implicit proof that the written code is correct.
+
+\idris{} \cite{brady2013idris} is a language with full dependent types, and
+extensive support for EDSLs through overloading and syntax macros. Through the
+use of \idris{}, and a framework for describing resource protocols using
+\emph{algebraic effects}~\cite{brady:effects}, we
+present a dependently-typed web framework, which allows the construction of
+programs with additional guarantees about correctness and security, whilst
+minimising the increase in development complexity. 
+
+\subsection{Contributions}
+The primary contribution of this paper is the application of 
+dependent types to provide strong static guarantees
+about the correctness and security of web applications, whilst minimising
+additional development complexity. In particular, we present:
+
+\begin{itemize}
+\item A form-handling mechanism, which preserves type information and
+manages user input, therefore
+increasing applications' resilience to attacks such as SQL injection and cross-site scripting.
+
+\item Representations of CGI, Databases and sessions as
+\textit{resource-dependent algebraic effects}, allowing programs to be accepted only when they
+follow clearly defined resource usage protocols.
+
+\item A message board application, demonstrating the usage of the framework.
+
+\end{itemize}
+
+We structure the remainder of this paper as follows. We provide a brief
+overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain
+how this may be used to ensure adherence to resource usage protocols for CGI,
+SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for
+type-safe form handling in Section ~\ref{form}, implemented using
+\texttt{Effects}; and discuss the larger example
+of a message board system making use of these components in Section
+~\ref{messageboard}.
+
+The code used to implement the framework and all associated examples used in this paper is available online at \url{http://www.github.com/idris-hackers/IdrisWeb}.
+% =================================================
+% =================================================
