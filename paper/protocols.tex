@@ -1,0 +1,604 @@
+\section{Modelling resource usage protocols}
+\label{rup}
+In this section, we show how three such effects; CGI, database access and a simple session handler, may be implemented, and describe the benefits of developing programs using this technique over simply handling them in the IO context or as part of a monad transformer.
+
+% =================================================
+
+\subsection{CGI}
+%TODO: Fix up the labels
+\begin{figure}[htpb!]
+\centering
+\scalebox{0.8}{
+\begin{tikzpicture}[>=latex]
+  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, node distance=6em, font={\sffamily\bfseries}]
+  
+  \tikzstyle{stateEdgePortion} = [black,thick];
+  \tikzstyle{stateEdge} = [stateEdgePortion,->];
+  \tikzstyle{edgeLabel} = [pos=0.5, font={\sffamily\small}];
+
+  \node[initial,state] (A)              {Uninitialised};
+  \node[state]         (B) [below of=A] {Initialised};
+  \node[state]         (C) [below of=B] {TaskRunning};
+  \node[state]         (D) [below of=C] {TaskCompleted};
+  \node[state]         (E) [below of=D] {HeadersWritten};
+  \node[state]         (F) [below of=E] {ContentWritten};
+
+  \path (A) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{initialise}} (B)
+        (B) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{startTask}} (C)
+        (C) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{finishTask}} (D)
+        (D) edge[stateEdge]   node[edgeLabel, xshift=3.5em] {\texttt{writeHeaders}} (E)
+        (E) edge[stateEdge]   node[edgeLabel, xshift=3.5em] {\texttt{writeContent}} (F);
+\end{tikzpicture}
+}
+\caption{CGI States}
+\label{fig:cgistates}
+\end{figure}
+
+CGI is used to invoke an application on a web server, making use of environment variables to convey information gained from an HTTP request and using standard output to communicate with the remote client. Importantly, HTTP headers must be correctly written to the browser prior to any other output; failure to do so will result in an internal server error being shown.
+
+A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
+
+By modelling CGI as a resource-dependent algebraic effect, we may enforce a resource usage protocol which, even though the program may be running in an IO execution context, prevents arbitrary IO from being performed and therefore ensures that the headers are written correctly. In order to accomplish this, we define an effect, \texttt{Cgi}, and an associated resource, \texttt{InitialisedCGI}, which is parameterised over the current state, \texttt{CGIStep}. This resource describes the current state, alongside a \texttt{CGIInfo} record which contains information from the request. We represent an uninitialised CGI process as the unit type, ().
+
+\begin{SaveVerbatim}{cgistep}
+
+data CGIStep = Initialised   | TaskRunning 
+             | TaskCompleted | HeadersWritten 
+             | ContentWritten
+
+data InitialisedCGI : CGIStep -> Type where
+     ICgi : CGIInfo -> InitialisedCGI s
+
+\end{SaveVerbatim}
+\useverb{cgistep}
+
+\noindent
+Figure~\ref{fig:cgistates} shows the states through which the CGI program
+progresses, and Figure~\ref{fig:cgieffect} shows how this is represented
+as a resource-dependent algebraic effect. Each operation performed in an effectful
+program requires the resource to be of a certain type, and the completion of
+the operation may alter the type or value of the resource. The \texttt{Cgi}
+effect declaration shows these resource updates in the types of each operation,
+effectively specifying a state machine.
+
+Upon creation, the CGI application is uninitialised, meaning that environment variables have not been queried to populate the CGI state. The only operation
+that can be performed in this state is initialisation: by calling
+\texttt{initialise}, a CGIInfo record is populated, and the state transitions
+to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the
+\texttt{Cgi} effect, and involves transitioning from the uninitialised state to
+the initialised state.
+
+\begin{SaveVerbatim}{cgieff}
+{-                     { Input resource type }         { Output resource type }        { Value } -}
+
+data Cgi : Effect where
+    Init         : Cgi ()                              (InitialisedCGI Initialised)    ()
+    StartRun     : Cgi (InitialisedCGI Initialised)    (InitialisedCGI TaskRunning)    ()
+    FinishRun    : Cgi (InitialisedCGI TaskRunning)    (InitialisedCGI TaskCompleted)  ()
+    WriteHeaders : Cgi (InitialisedCGI TaskCompleted)  (InitialisedCGI HeadersWritten) ()
+    WriteContent : Cgi (InitialisedCGI HeadersWritten) (InitialisedCGI ContentWritten) ()
+    OutputData   : String -> 
+                   Cgi (InitialisedCGI TaskRunning)    (InitialisedCGI TaskRunning)    ()
+    RunAction    : Env IO (CGI (InitialisedCGI TaskRunning) :: effs) -> CGIProg effs a -> 
+                   Cgi (InitialisedCGI TaskRunning)    (InitialisedCGI TaskRunning)    a
+\end{SaveVerbatim}
+
+\begin{figure*}[t]
+\begin{center}
+\useverb{cgieff}
+\end{center}
+\caption{CGI Effect}
+\label{fig:cgieffect}
+\end{figure*}
+
+Additional operations, including those to query POST and GET variables, are
+omitted in the interest of brevity.
+
+User code executes in the \texttt{TaskRunning} state. Several operations, such
+as querying the POST and GET variables, are available in this state, alongside
+functions to output data to the web page and append data to the response
+headers. It is important to note, that at this stage nothing is written to the
+page, with the \texttt{output} and \texttt{addHeader} functions instead
+modifying the CGIInfo record. This data may then be printed at the end of the
+program's execution, in accordance with the resource usage protocol.
+
+After the user code has finished execution, control returns to the library
+code. At this point, the state transitions to TaskCompleted, and the headers
+are written.  Finally, the headers and content are written which completes the
+process. Since we parameterise the resource over a state, we may ensure that
+certain operations only happen in a particular prescribed order.
+
+In \idris{}, types are first-class, meaning that they may be treated like other
+terms in computations. We may therefore define the following type synonym,
+which we may use in order to make use of the CGI framework: 
+
+\begin{SaveVerbatim}{cgiprog}
+
+CGIProg : List EFFECT -> Type -> Type
+CGIProg effs a = 
+  Eff IO (CGI (InitialisedCGI TaskRunning) :: effs) a
+
+\end{SaveVerbatim}
+\useverb{cgiprog}
+
+\noindent
+This is then passed, along with initial values for other effects that the user
+may wish to use, to the runAction function, which invokes the RunAction
+operation and executes the user-specified action.
+%
+A simple ``Hello, world!'' program would be defined as follows:
+
+\begin{SaveVerbatim}{hworldcgi}
+
+module Main
+import Cgi
+
+sayHello : CGIProg [] ()
+sayHello = output "Hello, world!"
+
+main : IO ()
+main = runCGI [initCGIState] sayHello
+
+\end{SaveVerbatim}
+\useverb{hworldcgi}
+% =================================================
+
+\subsection{Database access with SQLite}
+
+SQLite\footnote{\texttt{http://www.sqlite.org}} is a lightweight SQL database
+engine often used as simple, structured storage for larger applications. We
+make use of SQLite due to its simplicity, although we envisage that these
+concepts would be applicable to more complex database management systems. 
+
+The creation, preparation and execution of SQL queries has a specific usage
+protocol, with several possible points of failure. Failure is handled in
+traditional web applications by the generation of exceptions, which may be
+handled in the program.  Handling such exceptions is often optional, however,
+and in some cases unhandled errors may cause a deployed web application to
+display an error to the user. Such errors can be used to determine the
+structure of an insecure SQL query, and are often used by attackers to
+determine attack vectors for SQL injection attacks.
+
+Figure~\ref{fig:sqlitestates} shows a resource usage protocol for database
+access, which we have implemented for the SQLite library. This is encapsulated
+by the \texttt{Sqlite} effect (Figure \ref{fig:dbeffect}; we again omit some operations, such as those to
+bind and retrieve data types other than \texttt{String}, in the interest of
+brevity).
+
+\begin{SaveVerbatim}{databaseeff}
+{-                           { Input resource type }    { Output resource type }             { Value }           -}
+data Sqlite : Effect where
+  OpenDB            : DBName -> 
+                      Sqlite ()                         (Either () SQLiteConnected)          (Either SQLiteCode ())
+  CloseDB           : Sqlite (SQLiteConnected)          ()                                   ()
+  PrepareStatement  : QueryString -> 
+                      Sqlite (SQLiteConnected)          (Either (SQLitePSFail) 
+                                                          (SQLitePSSuccess Binding))         (Either SQLiteCode ())
+  BindInt           : ArgPos -> Int -> 
+                      Sqlite (SQLitePSSuccess Binding)  (SQLitePSSuccess Binding)            ()
+  FinishBind        : Sqlite (SQLitePSSuccess Binding)  (Either SQLiteFinishBindFail
+                                                          (SQLitePSSuccess Bound))           (Either BindError ())
+  ExecuteStatement  : Sqlite (SQLitePSSuccess Bound)    (Either (SQLiteExecuting InvalidRow)
+                                                          (SQLiteExecuting ValidRow)         StepResult
+  RowStep           : Sqlite (SQLiteExecuting ValidRow) (Either (SQLiteExecuting InvalidRow)
+                                                          (SQLiteExecuting ValidRow))        StepResult
+  GetColumnText     : Column -> 
+                      Sqlite (SQLiteExecuting ValidRow) (SQLiteExecuting ValidRow)           String
+
+\end{SaveVerbatim}
+
+\begin{figure*}[t]
+\begin{center}
+\useverb{databaseeff}
+\end{center}
+\caption{Database Effect}
+\label{fig:dbeffect}
+\end{figure*}
+
+%TODO: Fix up the labels
+\begin{figure}[h]
+\centering
+\scalebox{0.8}{
+\begin{tikzpicture}[>=latex]
+  \tikzset{every loop/.style={min distance=10mm,looseness=5}}
+  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, node distance=6em, font={\sffamily\bfseries}]
+  
+  \tikzstyle{stateEdgePortion} = [black,thick];
+  \tikzstyle{stateEdge} = [stateEdgePortion,->];
+  \tikzstyle{edgeLabel} = [pos=0.5, font={\sffamily\small}];
+
+  \node[initial,state] (A)              {Uninitialised};
+  \node[state]         (B) [below of=A] {ConnectionOpened};
+  \node[state]         (C) [below of=B] {PreparedStatementOpen};
+  \node[state]         (D) [below of=C] {PreparedStatementBinding};
+  \node[state]         (E) [below of=D] {PreparedStatementBound};
+  \node[state]         (F) [below of=E] {PreparedStatementExec};
+
+  \path (A) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{openDB}} (B)
+        (B) edge[stateEdge, bend right=80]   node[edgeLabel, text width=2cm, xshift=3em] {\texttt{closeDB, connFail}} (A)
+        (B) edge[stateEdge]   node[edgeLabel, xshift=4em] {\texttt{prepareStatement}} (C)
+        (C) edge[stateEdge, bend left=85]   node[edgeLabel, xshift=3em, yshift=-4em] {\texttt{stmtFail}} (A)
+        (C) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{startBind}} (D)
+        (D) edge[stateEdge]   node[edgeLabel, xshift=3.5em] {\texttt{finishBind}} (E)
+        (E) edge[stateEdge, bend left=85]   node[edgeLabel, xshift=-3.5em] {\texttt{bindFail}} (A)
+        (E) edge[stateEdge]   node[edgeLabel, xshift=3.5em] {\texttt{beginExecution}} (F)
+        (F) edge[stateEdge, bend right=85]   node[edgeLabel, xshift=-3.5em] {\texttt{finalise}} (B)
+        (F) edge[stateEdge, bend right=85]   node[edgeLabel, xshift=3.5em] {\texttt{executeFail}} (A)
+            edge[stateEdge, loop left]   node[edgeLabel, text width=2cm, xshift=2em] {\texttt{nextRow, reset}} (B);
+\end{tikzpicture}
+}
+\caption{Database Resource Usage Protocol}
+\label{fig:sqlitestates}
+\end{figure}
+
+\noindent
+There are three main phases involved in the usage of the SQLite protocol:
+connection to the database, preparation of a query, and execution of the query.
+We define several resources to encapsulate the state at any given point during the protocol.
+
+We first define the \texttt{SQLiteConnected} resource, which signifies that a successful connection has been made to the database. This resource contains a pointer to the database structure which is used in further computations.
+
+\begin{SaveVerbatim}{sqliteconnected}
+
+data SQLiteConnected : Type where
+  SQLConnection : ConnectionPtr -> SQLiteConnected
+  
+\end{SaveVerbatim}  
+\useverb{sqliteconnected}
+
+\noindent
+We secondly define the \texttt{SQLitePSSuccess}, \texttt{SQLitePSFail}, and \texttt{SQLiteFinishBindFail} resources to represent the process of creating and binding variables to a prepared statement.
+
+\begin{SaveVerbatim}{sqliteconnected}
+
+data BindStep = Binding | Bound
+
+data SQLitePSSuccess : BindStep -> Type where
+  SQLitePS       : ConnectionPtr -> 
+                   StmtPtr -> SQLitePSSuccess a
+  SQLiteBindFail : ConnectionPtr -> 
+                   StmtPtr -> 
+                   BindError -> SQLitePSSuccess a
+
+
+data SQLitePSFail : Type where
+  PSFail : ConnectionPtr -> SQLitePSFail
+
+data SQLiteFinishBindFail : Type where
+  SQLiteFBFail : ConnectionPtr -> StmtPtr -> 
+                 SQLiteFinishBindFail
+                 
+\end{SaveVerbatim}
+\useverb{sqliteconnected}
+
+\noindent
+The \texttt{SQLitePSSuccess} resource indicates that a prepared statement has been correctly created by the underlying library, given a query string. The resource is parameterised by the \texttt{BindStep} type, which indicates whether the binding process has been completed. Should the creation of a prepared statement fail, the resource will be set to \texttt{SQLitePSFail}. 
+
+To avoid having to explicitly check for failures each time a variable is bound to an argument in the prepared statement, any failures are recorded by constructing the resource with the \texttt{SQLiteBindFail} constructor. Should any binding operations be called whilst in this state, the operations will not be passed to the underlying library. After the binding stage has completed, the \texttt{FinishBind} operation is called. This operation inspects the resource and either transitions to the \texttt{SQLitePSSuccess Bound} state, indicating that all bind operations were successful, or to the \texttt{SQLiteFinishBindFail} state, should a binding operation have been unsuccessful. 
+
+SQLite operates by loading database rows into a buffer, the contents of which may then be accessed through several column access functions. After all rows returned by a query have been processed, no further calls to fetch more rows may be made. Additionally, no calls to column access functions may be made whilst there is no row being currently processed. 
+
+Through the use of dependent types, we may encode these invariants statically, using the \texttt{SQLiteExecuting} resource. This is parameterised by the \texttt{ExecutionResult} data type, which indicates whether there is currently a valid row in the buffer.
+
+\begin{SaveVerbatim}{sqliteexecuting}
+
+data ExecutionResult = ValidRow
+                     | InvalidRow
+
+data SQLiteExecuting : ExecutionResult -> Type where
+  SQLiteE : ConnectionPtr -> 
+            StmtPtr -> SQLiteExecuting a
+  
+\end{SaveVerbatim}
+\useverb{sqliteexecuting}
+
+Column access functions may only be called when there is a valid row in the buffer, as signified by the input resource of each operation.
+
+\begin{SaveVerbatim}{getcoltext}
+
+GetColumnText : Column -> 
+                Sqlite (SQLiteExecuting ValidRow) 
+                       (SQLiteExecuting ValidRow)
+                       String
+                         
+\end{SaveVerbatim}
+\useverb{getcoltext}
+
+\noindent
+In order to provide the necessary static guarantee that there is a valid row to process in the buffer, we make use of the \texttt{if\_valid} construct. The \texttt{nextRow} function 
+%If a failure happens at any point during the computation, the resource is
+%updated to reflect the failure: if, for example, the library failed to create a
+%connection to the database, the resource value would be updated to
+%\texttt{OpenConn InvalidConn}. At this point, no further side-effecting
+%requests are made to the underlying SQLite library, in order to ensure safety.
+%The \texttt{connFail}, \texttt{stmtFail}, \texttt{bindFail} and
+%\texttt{executeFail} utility functions allow for failures, once detected, to be
+%handled by executing the appropriate sequence of state transition functions to
+%dispose of any open resources and return to the initial protocol state. 
+
+%Queries are evaluated through one or more calls to the \texttt{nextRow} function, which either executes an update statement or returns the next row of a result set. 
+%SQL queries are evaluated in SQLite upon a call to the C library function
+%\texttt{sqlite3\_step()}. In the case that a statement returns a result set,
+%each subsequent call retrieves another row for processing using a column access
+%function. Once all rows have been retrieved, the library returns
+%\texttt{SQLITE\_DONE}, meaning that no further calls should be made without
+%resetting the function. We encapsulate this requirement through the
+%\texttt{StepResult} data type within the \texttt{ExecutingStmt} constructor. 
+
+%\begin{SaveVerbatim}{stepres}
+
+%data StepResult = Unstarted    | StepFail
+%                | StepComplete | NoMoreRows
+
+%\end{SaveVerbatim}
+%\useverb{stepres}
+
+\noindent
+Each call to \texttt{nextRow}, which is a wrapper around the underlying
+\texttt{sqlite3\_step()} C library function, returns a result of type
+\texttt{StepResult}, which is then reflected in the resource. Calls to
+\texttt{sqlite3\_step()} are only executed if the previous \texttt{StepResult}
+is either \texttt{Unstarted} or \texttt{StepComplete}. We may therefore
+statically guarantee that only calls that will return a valid result are
+executed. 
+
+By incorporating pointers to open connections and prepared statements into the
+resource associated with the effect, we introduce a further layer of
+abstraction, in order to hide implementation details from the developer and
+encourage cleaner, less error-prone code. 
+
+\subsubsection{Example}
+
+Programs making use of the DSL should look familiar to developers even without
+a background in functional programming. To demonstrate the functionality of the
+library, we return to the previous example of selecting the names and addresses
+of all staff working in a given department. Due to the fact that the
+\texttt{Effects} library overloads the bind operator, we may make use of
+\texttt{do}-notation, facilitating the usage of an imperative style.
+We define a function \texttt{textSel} of type:
+
+\noindent
+\begin{SaveVerbatim}{sqleffty}
+
+String ->
+Eff IO [SQLITE ()] (Either String (List (String, String)))
+
+\end{SaveVerbatim}
+\useverb{sqleffty}
+
+\noindent
+This means that the program will be run in \texttt{IO}, and must
+start and end with no active resources. The return type indicates that either a
+list of \texttt{(String, String)} pairs, representing names and addresses in the
+database, or an error will be returned.
+%This example is shown in Figure
+%\ref{fig:testsel}.
+
+\begin{SaveVerbatim}{testsel}
+testSelect : String -> Eff IO [SQLITE ()] 
+             (Either String (List (String, String)))
+testSelect dept = do
+  open_db <- openDB "people.db"
+  if open_db then do
+    let sql = "SELECT name, address FROM `staff` 
+                    WHERE dept = ?;"
+    sql_prep_res <- prepareStatement sql
+    if sql_prep_res then do 
+      startBind
+      bindText 1 dept
+      finishBind
+      beginExecution
+      results <- collectResults
+      finaliseStatement
+      closeDB
+      return $ Right results
+    else do err <- stmtFail
+            return $ Left err
+  else do err <- connFail
+          return $ Left err 
+\end{SaveVerbatim}
+
+\begin{figure}[h]
+\useverb{testsel}
+\caption{Example SQL program}
+\label{fig:testsel}
+\end{figure}
+
+The program initially attempts to open a connection to the \texttt{people.db}
+database. At this point, since the \texttt{OpenDB} operation has been invoked,
+the program transitions to the \texttt{ConnectionOpened} state. The
+\texttt{openDB} function returns a Boolean value indicating whether or not the
+operation is successful. If not, then the \texttt{connFail} function is called
+to generate an appropriate error and dispose of the resources, as shown in
+~\ref{fig:sqlitestates}.
+
+A call to \texttt{prepareStatement} attempts to create a prepared statement,
+and a subsequent call to \texttt{beginExecution} allows data to be retrieved
+from the database.
+
+\texttt{CollectResults} makes a call to
+\texttt{nextRow} in order to make the next row of the result set available for
+processing, and uses \texttt{getColumnText} and \texttt{getColumnInt}
+to retrieve the data from the database. This function is then
+recursively called until there are no more rows to process.
+
+\begin{SaveVerbatim}{collectresty}
+
+collectResults : Eff IO 
+            [SQLITE (SQLiteRes PreparedStatementExec)] 
+            (List (String, Int))
+\end{SaveVerbatim}
+
+\begin{SaveVerbatim}{collectres}
+collectResults = do
+  step_result <- nextRow
+  case step_result of
+      StepComplete => do name <- getColumnText 1
+                         age <- getColumnInt 2
+                         xs <- collectResults
+                         return $ (name, age) :: xs
+      NoMoreRows => return []
+      StepFail => return [] 
+
+\end{SaveVerbatim}
+
+\noindent
+\useverb{collectresty}
+
+\noindent
+\useverb{collectres}
+
+In order to decrease unnecessary boilerplate code in user applications, we
+provide functions which abstract out unnecessary parts of this process. In
+order to do this, we define the algebraic data type \texttt{DBVal}, which is a
+tagged union over simple primitive types:
+
+\begin{SaveVerbatim}{dbvals}
+
+data DBVal = DBInt Int     | DBText String
+           | DBFloat Float | DBNull
+
+\end{SaveVerbatim}
+\useverb{dbvals}
+
+\noindent
+We also make use of the \texttt{ResultSet} type, which is a list of returned
+database rows.
+
+\begin{SaveVerbatim}{resultset}
+
+ResultSet : Type
+ResultSet = List (List DBVal)
+
+\end{SaveVerbatim}
+\useverb{resultset}
+
+\noindent
+Using these, we may implement a function, \texttt{ExecuteSelect}, which, given
+a query, a list of variables to bind and their associated indices within the
+query, and a function which is used to extract information out of each returned
+database row, returns either a \texttt{ResultSet} or an error.
+
+\begin{SaveVerbatim}{execsel}
+
+executeSelect : 
+  String -> String -> List (Int, DBVal) -> 
+  Eff m [SQLITE (SQLiteRes PreparedStatementExec)] 
+                 (List DBVal) -> 
+  Eff m [SQLITE ()] (Either String ResultSet)
+  
+\end{SaveVerbatim}
+\useverb{execsel}
+
+% =================================================
+\subsection{A Simple Session Handler}
+More complex web applications require some persistent state across separate
+requests. This is often done through an abstraction of a \textit{session},
+wherein a cookie is set on the remote host containing a unique session ID,
+which is in turn used to retrieve data. In this section, we describe the
+implementation of a simple session handler, and the resource usage protocol
+involved. 
+
+A major strength of the \texttt{Effects} library is that it allows for simple
+composition of individual, fine-grained effects. By combining the individual
+CGI and SQLite components, we may construct a simple session handler to provide
+a notion of state across separate web requests. 
+
+We implement this by having a SQLite database, containing two tables:
+\texttt{session}, which stores session keys and their associated expiry dates,
+and \texttt{sessiondata}, which contains the data associated with each session.
+A datum associated with the session is described as a tagged union containing
+one of the primitive types \texttt{String}, \texttt{Bool} or \texttt{Int},
+which is serialised alongside a type tag for storage in the database.
+%TODO: Fix up the labels
+
+\begin{SaveVerbatim}{sessioneff}
+{-                        { Input resource type }            { Output resource type }   { Value }        -}
+
+data Session : Effect where
+  LoadSession           : SessionID -> 
+                          Session (SessionRes SessionClosed) (SessionRes SessionOpen)   (Maybe SessionData)
+  UpdateSession         : SessionData -> 
+                          Session (SessionRes SessionOpen)   (SessionRes SessionOpen)   ()
+  CreateSession         : SessionData -> 
+                          Session (SessionRes SessionClosed) (SessionRes SessionOpen)   (Maybe SessionID)
+  DeleteSession         : Session (SessionRes SessionOpen)   (SessionRes SessionClosed) Bool 
+  WriteToDB             : Session (SessionRes SessionOpen)   (SessionRes SessionClosed) Bool
+  DiscardSessionChanges : Session (SessionRes SessionOpen)   (SessionRes SessionClosed) ()
+  GetSessionID          : Session (SessionRes SessionOpen)   (SessionRes SessionOpen)   (Maybe SessionID)
+  GetSessionData        : Session (SessionRes SessionOpen)   (SessionRes SessionOpen)   (Maybe SessionData)
+\end{SaveVerbatim}
+
+\begin{figure*}[t]
+\begin{center}
+\useverb{sessioneff}
+\end{center}
+\caption{Session Effect}
+\label{fig:sessioneffect}
+\end{figure*}
+
+\begin{figure}[htpb!]
+\centering
+\scalebox{0.8}{
+\begin{tikzpicture}[>=latex]
+  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, node distance=7.5em, font={\sffamily\bfseries}]
+  
+  \tikzstyle{stateEdgePortion} = [black,thick];
+  \tikzstyle{stateEdge} = [stateEdgePortion,->];
+  \tikzstyle{edgeLabel} = [pos=0.5, font={\sffamily\small}];
+
+  \node[initial,state] (A)              {SessionClosed};
+  \node[state]         (B) [below of=A] {SessionOpen};
+
+  \path (A) edge[stateEdge]   node[edgeLabel, xshift=-1cm, text width=3cm] {\texttt{loadSession, createSession}} (B)
+        (B) edge[stateEdge, bend right=80]   node[edgeLabel, xshift=6em, text width=3cm] {\texttt{writeToDB, discardSessionChanges, deleteSession}} (A)
+            edge[stateEdge, loop left]   node[edgeLabel] {\texttt{updateSession}} (B);
+\end{tikzpicture}
+}
+\caption{Session Handler Resource Usage Protocol}
+\label{fig:sessionstates}
+\end{figure}
+
+Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated
+with the session handler, and Figure \ref{fig:sessioneffect} the corresponding
+algebraic effect. In this application, there exist two states:
+In \texttt{SessionClosed}, the user may load or create a
+session.
+In \texttt{SessionOpen}, the user may update the
+representation of the session in memory, serialise the session and write it to
+the database, or delete the session and invalidate the user's session key. The
+introduction of these two states ensures that changes are explicitly either
+written or discarded, eliminating the possibility of a developer updating the
+session but neglecting to commit it to persistent storage. This, of course, is
+under the assumption that the process exits cleanly: we attempt to facilitate
+this by writing total functions where possible.
+
+Much like the SQLite effect, we encapsulate failure by reflecting it in the
+resource associated with the effect. 
+
+\begin{SaveVerbatim}{sstep}
+
+data SessionStep = SessionClosed | SessionOpen
+\end{SaveVerbatim}
+
+\begin{SaveVerbatim}{sres}
+data SessionRes : SessionStep -> Type where
+  InvalidSession : SessionRes s  
+  ValidSession   : SessionID -> 
+                   SessionData -> 
+                   SessionRes s
+
+\end{SaveVerbatim}
+
+\useverb{sstep}
+
+\useverb{sres}
+
+
+The \texttt{SessionRes} data type is parameterised over the current state,
+which determines which operations may be performed, and has two constructors:
+\texttt{InvalidSession} and \texttt{ValidSession}. If an operation such as
+creating a new session fails, no further side-effecting calls will be made, in
+turn preserving integrity. 
+
+% =================================================

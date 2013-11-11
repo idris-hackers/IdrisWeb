@@ -1,0 +1,214 @@
+\section{An overview of the \texttt{Effects} framework}
+\label{effects}
+
+\texttt{Effects}~\cite{brady:effects} is an \idris{} library which handles
+side-effects such as state, exceptions, and I/O as \emph{algebraic
+effects}~\cite{Plotkin2009}. In particular, it supports parameterising effects
+by an input and output \emph{state}, which permits effectful programs to track
+the progress of a resource usage protocol. Effectful programs are written
+in a monadic style, with \texttt{do}-notation, with their type stating which
+specific effects are available.
+Effectful
+programs are described using the following data type,
+in the simplest case:
+
+\begin{SaveVerbatim}{efftype}
+
+Eff : (m : Type -> Type) ->
+      (es : List EFFECT) -> (a : Type) -> Type
+
+\end{SaveVerbatim}
+\useverb{efftype}
+
+\noindent
+\texttt{Eff} is parameterised over a \emph{computation context}, \texttt{m}, 
+which describes the context in which the effectful program will be run, a
+list of side effects \texttt{es} that the program is permitted to use, and the
+programs return type \texttt{a}. The name \texttt{m} for the computation context is
+suggestive of a monad, but there is no requirement for it to be so.
+
+For example, the following type carries an integer state,
+throws an exception of type \texttt{String} if the state reaches 100, 
+and runs in a \texttt{Maybe} context:
+
+\begin{SaveVerbatim}{addState}
+
+addState : Eff Maybe [STATE Int, EXCEPTION String] ()
+addState = do val <- get
+              when (val == 100) (raise "State too big")
+              put (val + 1)
+
+\end{SaveVerbatim}
+\useverb{addState}
+
+\subsection{Implementing Effects}
+
+Effects such as state and exception are described as algebraic data types,
+and run by giving \emph{handlers} for specific computation contexts. 
+Effects have a corresponding \emph{resource} (in the case of state, the
+resource is simply the current state). Executing an effectful operation may
+change the resource and return a value:
+
+\begin{SaveVerbatim}{efffam}
+
+Effect : Type
+Effect = (in_res : Type) -> (out_res : Type) -> 
+         (val : Type) -> Type
+
+\end{SaveVerbatim}
+\useverb{efffam}
+
+\noindent
+For example, the state effect is described as follows:
+
+\begin{SaveVerbatim}{stateeff}
+
+data State : Effect where
+     Get :      State a a a
+     Put : b -> State a b ()
+
+\end{SaveVerbatim}
+\useverb{stateeff}
+
+\noindent
+That is, \texttt{Get} returns a value of type \texttt{a} without updating
+the resource type. \texttt{Put} returns nothing, but has the effect of updating
+the resource. In order to make an effect usable, we implement a handler
+for a computation context by making an instance of the following class:
+
+\begin{SaveVerbatim}{effhandler}
+
+class Handler (e : Effect) (m : Type -> Type) where
+     handle : res -> 
+              (eff : e res res' t) -> 
+              (k: res' -> t -> m a) -> m a
+
+\end{SaveVerbatim}
+\useverb{effhandler}
+
+\noindent
+The \texttt{handle} function takes the input resource, an effect which may
+update that resource and execute a side-effect, and a continuation \texttt{k}
+which takes the updated resource and the return value of the effect. We use
+a continuation here primarily because there is no restriction on the number of
+times a handler may invoke the continuation (raising an exception, for example,
+will not call the continuation). Reading and updating states in handled
+for all computation contexts \texttt{m} as follows:
+
+\begin{SaveVerbatim}{statehandler}
+
+instance Handler State m where
+     handle st Get     k = k st st
+     handle st (Put n) k = k n ()
+
+\end{SaveVerbatim}
+
+\noindent
+Finally, we promote \texttt{State} into a concrete effect \texttt{STATE}, and
+the \texttt{Get} and \texttt{Put} operations into functions in \texttt{Eff}, as
+follows:
+
+\begin{SaveVerbatim}{stateconc}
+
+STATE : Type -> EFFECT
+STATE t = MkEff t State
+
+get : Eff m [STATE x] x
+get = Get 
+
+put : x -> Eff m [STATE x] ()
+put val = Put val
+
+\end{SaveVerbatim}
+\useverb{stateconc}
+
+A concrete effect is simply an algebraic effect type paired with its current
+resource type. This, and other
+technical details, are explained in full elsewhere~\cite{brady:effects}.
+For the purposes of this paper, it suffices to know how to describe and
+handle new algebraic effects.
+
+\subsection{Resource Protocols as Effects}
+
+More generally, a program might modify the set of effects available.
+This might be desirable for several reasons, such as adding a new
+effect, or to update an index of a dependently typed state. In this
+case, we describe programs using the \texttt{EffM} data type:
+
+\begin{SaveVerbatim}{effmtype}
+
+EffM : (m : Type -> Type) ->
+       (es : List EFFECT) -> (es' : List EFFECT) ->
+       (a : Type) -> Type
+
+\end{SaveVerbatim}
+\useverb{effmtype}
+
+\noindent
+\texttt{EffM} is parameterised over the context and type as before, but
+separates input effects (\texttt{es}) from output effects (\texttt{es'}). 
+In fact, \texttt{Eff}
+is defined in terms of \texttt{EffM}, with equal input/output effects.
+We can use this to describe how effects follow resource protocols. A simple
+example is a file access protocol, where a file must be opened before it
+is read or written, and a file must be closed on exit:
+
+\begin{SaveVerbatim}{fileeff}
+
+data FileIO : Effect where
+     Open  : String -> (m : Mode) -> 
+             FileIO () (OpenFile m) ()
+     Close : FileIO (OpenFile m) () ()
+
+     ReadLine  : FileIO (OpenFile Read)  
+                        (OpenFile Read) String
+     WriteLine : String -> 
+                 FileIO (OpenFile Write) 
+                        (OpenFile Write) ()
+     EOF       : FileIO (OpenFile Read)  
+                        (OpenFile Read) Bool
+
+\end{SaveVerbatim}
+\useverb{fileeff}
+
+\noindent
+Note that the types of the input and output resources describes how resource
+state changes in each operation: opening a file changes an empty resource to
+a resource containing an open file; reading a line is only possible if the
+resoource is a file open for reading, etc.
+The handler for this effect for an \texttt{IO} computation context will
+execute the required primitive I/O actions, as well as throwing an exception
+if any operation fails.
+
+The following program type checks, and therefore implicitly carries 
+a proof that the file resource protocol is followed correctly:
+
+\begin{SaveVerbatim}{testfile}
+
+testFile : Eff IO [FILE_IO (), STDIO] () 
+testFile = catch (do open "testFile" Read
+                     str <- readLine
+                     close
+                     putStrLn str)
+            (\err => putStrLn ("Error: " ++ show err))
+
+\end{SaveVerbatim}
+\useverb{testfile}
+
+\noindent
+The type of \texttt{testFile} states
+that File I/O and console I/O are available effects, and in particular that
+the resource associated with the File I/O will be in the same state on entry
+and exit.
+Therefore, attempting to write to the file, or failing to open or close the
+file, would cause a \emph{compile-time} error. 
+
+We will use this technique extensively
+throughout this paper: describe a resource usage protocol in terms of
+state transitions; implement an effect which captures that protocol; implement
+programs which, by using this effect, implicitly carry a proof that the resource
+protocol has been correctly followed.
+
+
+% =================================================
+% =================================================
