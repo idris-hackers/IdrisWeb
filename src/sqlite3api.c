@@ -79,6 +79,12 @@ char* sqlite3_get_error(void* db) {
 	DBinfo* dbi =(DBinfo*) db;
 	return dbi->buffer;
 }
+
+int idr_errcode(void* db) {
+    sqlite3* sql_db = (sqlite3*) db;
+    return sqlite3_errcode(sql_db);
+}
+
 /*
  Compiles the query into a byte-code program
  Returns a pointer to the sqlite3_stmt pointer
