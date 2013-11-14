@@ -122,7 +122,7 @@ retrieveSessionData s_id = do
         closeDB
         Effects.pure $ Right results
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do
@@ -159,7 +159,7 @@ storeSessionRow s_id (key, val, ty) = do
         closeDB
         Effects.pure $ Right ()
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do
@@ -173,7 +173,7 @@ storeSessionData s_id [] = Effects.pure $ Right ()
 storeSessionData s_id (sr :: srs) = do res <- storeSessionRow s_id sr
                                        case res of
                                             Left err => Effects.pure $ Left err
-                                            Right () => Effects.pure $ Right ()
+                                            Right () => storeSessionRow s_id srs
 
 removeSession: SessionID -> Eff IO [SQLITE ()] (Either QueryError ())
 removeSession s_id = do
@@ -190,7 +190,7 @@ removeSession s_id = do
         closeDB
         Effects.pure $ Right ()
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do
@@ -327,7 +327,8 @@ instance Handler Session IO where
   handle (ValidSession s_id s_dat) WriteToDB k = do
     update_res <- run [()] (updateSessionData s_id s_dat)
     case update_res of
-         Left err => k InvalidSession False
+         Left err => do putStrLn (show err) 
+                        k InvalidSession False
          Right () => k InvalidSession True
          
   handle InvalidSession WriteToDB k = k InvalidSession False

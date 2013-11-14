@@ -65,13 +65,14 @@ data QueryError = ConnectionError SQLiteCode
                 | BindingError BindError
                 | StatementError SQLiteCode
                 | ExecError String
+                | InternalError
 
 instance Show QueryError where
   show (ConnectionError code) = "Error connecting to database, code: " ++ (show code)
   show (BindingError (BE ap code)) = "Error binding variable, pos: " ++ (show ap) ++ ", code: " ++ (show code)
   show (StatementError code) = "Error creating prepared statement, code: " ++ (show code)
   show (ExecError err) = err
-
+  show (InternalError) = "Internal Error."
 data Sqlite : Effect where
   -- Opens a connection to the database
   OpenDB : DBName -> Sqlite () (Either () SQLiteConnected) (Either QueryError ())
@@ -88,7 +89,7 @@ data Sqlite : Effect where
  
   -- Checks to see whether all the binds were successful, if not then fails with the bind error
   FinishBind : Sqlite (SQLitePSSuccess Binding) (Either SQLiteFinishBindFail (SQLitePSSuccess Bound)) 
-                                                (Either QueryError ())
+                                                (Maybe QueryError)
 
   -- Executes the statement, and fetches the first row
   ExecuteStatement : Sqlite (SQLitePSSuccess Bound) (Either (SQLiteExecuting InvalidRow)
@@ -197,10 +198,10 @@ instance Handler Sqlite IO where
   
   -- Finishing binding, reporting any bind errors if they occurred
   handle (SQLitePS c p) (FinishBind) k = 
-    k (Right (SQLitePS c p)) (Right ())
+    k (Right (SQLitePS c p)) Nothing
 
   handle (SQLiteBindFail c ps be) (FinishBind) k = 
-    k (Left (SQLiteFBFail c ps)) (Left (BindingError be))
+    k (Left (SQLiteFBFail c ps)) (Just (BindingError be))
 
   handle (SQLitePS (ConnPtr c) (PSPtr p)) (ExecuteStatement) k = do
     step <- foreignNextRow (ConnPtr c)
@@ -306,7 +307,7 @@ bindNull pos = (BindNull pos)
 
 finishBind : EffM IO [SQLITE (SQLitePSSuccess Binding)]
                      [SQLITE (Either SQLiteFinishBindFail (SQLitePSSuccess Bound))]
-                     (Either QueryError ())
+                     (Maybe QueryError)
 finishBind = FinishBind
 
 nextRow : EffM IO [SQLITE (SQLiteExecuting ValidRow)] 
@@ -357,10 +358,9 @@ executeStatement : EffM IO [SQLITE (SQLitePSSuccess Bound)]
 executeStatement = ExecuteStatement
 
 
-partial
 getQueryError : Either QueryError b -> QueryError
 getQueryError (Left qe) = qe
-
+getQueryError _ = InternalError
 
 
 multiBind' : List (Int, DBVal) -> Eff IO [SQLITE (SQLitePSSuccess Binding)] ()
@@ -375,7 +375,7 @@ multiBind' ((pos, (DBText t)) :: xs) = do bindText pos t
 multiBind : List (Int, DBVal) -> 
             EffM IO [SQLITE (SQLitePSSuccess Binding)]
                     [SQLITE (Either (SQLiteFinishBindFail) (SQLitePSSuccess Bound))] 
-            (Either QueryError ()) 
+            (Maybe QueryError)
 multiBind vals = do
   multiBind' vals
   finishBind
@@ -398,6 +398,10 @@ executeInsert' id_res = do
             StepFail => Effects.pure . Left $ ExecError "Error whilst getting row count"          
 
 
+getBindError : Maybe QueryError -> QueryError
+getBindError (Just (BindingError be)) = (BindingError be)
+getBindError _ = InternalError
+
 executeInsert : String -> 
                 String -> 
                 List (Int, DBVal) -> 
@@ -415,12 +419,12 @@ executeInsert db_name query bind_vals = do
           let insert_id_sql = "SELECT last_insert_rowid();"
           sql_prep_res <- prepareStatement insert_id_sql
           if_valid then do
-            bind_res <- finishBind
+            bind_res_2 <- finishBind
             if_valid then do 
               exec_res <- executeStatement
               executeInsert' exec_res
             else do
-              let (Left be) = bind_res
+              let be = getBindError bind_res_2
               cleanupBindFail
               Effects.pure $ Left be
           else do 
@@ -431,7 +435,7 @@ executeInsert db_name query bind_vals = do
           closeDB
           Effects.pure $ Left (ExecError "Insert failed")
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do
@@ -454,6 +458,7 @@ collectResults fn = do
     Effects.pure $ results :: xs 
   else Effects.pure []
 
+
 -- Convenience function to abstract around some of the boilerplate code.
 -- Takes in the DB name, query, a list of (position, variable value) tuples,
 -- a function to process the returned data, 
@@ -475,7 +480,7 @@ executeSelect db_name q bind_vals fn = do
         closeDB
         Effects.pure $ Right res
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do

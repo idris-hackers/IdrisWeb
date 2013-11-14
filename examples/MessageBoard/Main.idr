@@ -235,7 +235,7 @@ userExists username = do
         res <- userExists'  
         Effects.pure $ Right res
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do
@@ -321,7 +321,7 @@ authUser username password = do
         executeStatement 
         authUser' 
       else do
-        let (Left be) = bind_res
+        let be = getBindError bind_res
         cleanupBindFail
         Effects.pure $ Left be
     else do
@@ -333,9 +333,9 @@ authUser username password = do
 
 setSession : UserID -> Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised), SQLITE ()] Bool
 setSession user_id = do
-  create_res <- lift (Drop (Keep (Drop (SubNil)))) (createSession [(USERID_VAR, SInt user_id)])
-  sess_res <- lift (Keep (Keep (Drop (SubNil)))) setSessionCookie
-  db_res <- lift (Drop (Keep (Drop (SubNil)))) writeSessionToDB
+  create_res <- lift' (createSession [(USERID_VAR, SInt user_id)])
+  sess_res <- lift' setSessionCookie
+  db_res <- lift' writeSessionToDB
   pure (sess_res && db_res)
 
 
@@ -439,9 +439,9 @@ printThreads = do
     Left err => do lift' (output $ "Could not retrieve threads, error: " ++ (show err))
                    Effects.pure ()
     Right threads => do lift' (output htmlPreamble)
-                        lift (Keep (Drop (SubNil))) (output "<table><tr><th>Title</th><th>Author</th></tr>")
+                        lift' (output "<table><tr><th>Title</th><th>Author</th></tr>")
                         traverseThreads threads
-                        lift (Keep (Drop (SubNil))) (output "</table><br />")
+                        lift' (output "</table><br />")
                         output "<a href=\"?action=newthread\">Create a new thread</a><br />"
                         output "<a href=\"?action=register\">Register</a><br />"
                         output "<a href=\"?action=login\">Log In</a><br />"
