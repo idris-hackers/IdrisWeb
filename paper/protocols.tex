@@ -109,8 +109,7 @@ process. Since we parameterise the resource over a state, we may ensure that
 certain operations only happen in a particular prescribed order.
 
 In \idris{}, types are first-class, meaning that they may be treated like other
-terms in computations. We may therefore define the following type synonym,
-which we may use in order to make use of the CGI framework: 
+terms in computations. We may therefore define the following type synonym, used within the CGI section of the framework to denote an effectual CGI program: 
 
 \begin{SaveVerbatim}{cgiprog}
 
@@ -147,7 +146,7 @@ main = runCGI [initCGIState] sayHello
 
 SQLite\footnote{\texttt{http://www.sqlite.org}} is a lightweight SQL database
 engine often used as simple, structured storage for larger applications. We
-make use of SQLite due to its simplicity, although we envisage that these
+make use of SQLite to demonstrate a resource usage protocol for database access due to its simplicity, although we envisage that these
 concepts would be applicable to more complex database management systems. 
 
 The creation, preparation and execution of SQL queries has a specific usage
@@ -160,7 +159,7 @@ structure of an insecure SQL query, and are often used by attackers to
 determine attack vectors for SQL injection attacks.
 
 Figure~\ref{fig:sqlitestates} shows a resource usage protocol for database
-access, which we have implemented for the SQLite library. This is encapsulated
+access, which we have implemented for the SQLite library. Although some additional states are used to capture failing computations, these are omitted from the diagram. The protocol is encapsulated
 by the \texttt{Sqlite} effect (Figure \ref{fig:dbeffect}; we again omit some operations, such as those to
 bind and retrieve data types other than \texttt{String}, in the interest of
 brevity).
@@ -177,13 +176,16 @@ data Sqlite : Effect where
   BindInt           : ArgPos -> Int -> 
                       Sqlite (SQLitePSSuccess Binding)  (SQLitePSSuccess Binding)            ()
   FinishBind        : Sqlite (SQLitePSSuccess Binding)  (Either SQLiteFinishBindFail
-                                                          (SQLitePSSuccess Bound))           (Either BindError ())
+                                                          (SQLitePSSuccess Bound))           (Maybe BindError)
   ExecuteStatement  : Sqlite (SQLitePSSuccess Bound)    (Either (SQLiteExecuting InvalidRow)
                                                           (SQLiteExecuting ValidRow)         StepResult
   RowStep           : Sqlite (SQLiteExecuting ValidRow) (Either (SQLiteExecuting InvalidRow)
                                                           (SQLiteExecuting ValidRow))        StepResult
   GetColumnText     : Column -> 
                       Sqlite (SQLiteExecuting ValidRow) (SQLiteExecuting ValidRow)           String
+                      
+  CleanupPSFail     : Sqlite (SQLitePSFail)             ()                                   ()
+  CleanupBindFail   : Sqlite (SQLiteFinishBindFail)     ()                                   ()
 
 \end{SaveVerbatim}
 
@@ -196,35 +198,36 @@ data Sqlite : Effect where
 \end{figure*}
 
 %TODO: Fix up the labels
-\begin{figure}[h]
+\begin{figure}
 \centering
 \scalebox{0.8}{
 \begin{tikzpicture}[>=latex]
   \tikzset{every loop/.style={min distance=10mm,looseness=5}}
-  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, node distance=6em, font={\sffamily\bfseries}]
+  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, align=center, node distance=7em, font={\sffamily\bfseries}]
   
   \tikzstyle{stateEdgePortion} = [black,thick];
   \tikzstyle{stateEdge} = [stateEdgePortion,->];
   \tikzstyle{edgeLabel} = [pos=0.5, font={\sffamily\small}];
 
   \node[initial,state] (A)              {Uninitialised};
-  \node[state]         (B) [below of=A] {ConnectionOpened};
-  \node[state]         (C) [below of=B] {PreparedStatementOpen};
-  \node[state]         (D) [below of=C] {PreparedStatementBinding};
-  \node[state]         (E) [below of=D] {PreparedStatementBound};
-  \node[state]         (F) [below of=E] {PreparedStatementExec};
+  \node[state]         (B) [below of=A] {SQLiteConnected};
+  \node[state]         (C) [below of=B] {SQLitePSSuccess Binding};
+  \node[state]         (D) [below of=C] {SQLitePSSuccess Bound};
+  \node[state]         (E) [below left of=D, xshift=-4em] {SQLiteExecuting \\ ValidRow};
+  \node[state]         (F) [below right of=D, xshift=4em] {SQLiteExecuting \\ InvalidRow};
 
-  \path (A) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{openDB}} (B)
-        (B) edge[stateEdge, bend right=80]   node[edgeLabel, text width=2cm, xshift=3em] {\texttt{closeDB, connFail}} (A)
-        (B) edge[stateEdge]   node[edgeLabel, xshift=4em] {\texttt{prepareStatement}} (C)
-        (C) edge[stateEdge, bend left=85]   node[edgeLabel, xshift=3em, yshift=-4em] {\texttt{stmtFail}} (A)
-        (C) edge[stateEdge]   node[edgeLabel, xshift=3em] {\texttt{startBind}} (D)
-        (D) edge[stateEdge]   node[edgeLabel, xshift=3.5em] {\texttt{finishBind}} (E)
-        (E) edge[stateEdge, bend left=85]   node[edgeLabel, xshift=-3.5em] {\texttt{bindFail}} (A)
-        (E) edge[stateEdge]   node[edgeLabel, xshift=3.5em] {\texttt{beginExecution}} (F)
-        (F) edge[stateEdge, bend right=85]   node[edgeLabel, xshift=-3.5em] {\texttt{finalise}} (B)
-        (F) edge[stateEdge, bend right=85]   node[edgeLabel, xshift=3.5em] {\texttt{executeFail}} (A)
-            edge[stateEdge, loop left]   node[edgeLabel, text width=2cm, xshift=2em] {\texttt{nextRow, reset}} (B);
+  \path (A) edge[stateEdge]   node[edgeLabel, xshift=2.5em] {\texttt{openDB}} (B)
+        (B) edge[stateEdge, bend right=80]   node[edgeLabel, text width=2cm, xshift=4.5em] {\texttt{closeDB, connFail}} (A)
+        (B) edge[stateEdge]   node[edgeLabel, xshift=5em] {\texttt{prepareStatement}} (C)
+        (C) edge[stateEdge]   node[edgeLabel, xshift=3.25em, yshift=-0.75em] {\texttt{finishBind}} (D)
+        (D) edge[stateEdge]   node[edgeLabel, text width=2cm, xshift=-4.5em, yshift=-1em] {\texttt{executeStatement, nextRow}} (F)
+        (D) edge[stateEdge]   node[edgeLabel, xshift=3em] {} (E)
+        (E) edge[stateEdge, bend left=35]   node[edgeLabel, xshift=3em, yshift=-5em] {\texttt{finaliseValid}} (A)
+        (F) edge[stateEdge, bend right=35]   node[edgeLabel, xshift=-3em, yshift=-5em] {\texttt{finaliseInvalid}} (A)
+        (E) edge[stateEdge]   node[edgeLabel, yshift=-1em] {\texttt{nextRow}} (F)
+        (F) edge[stateEdge, bend left=35]   node[edgeLabel, yshift=-1em] {\texttt{reset}} (E)
+        (E) edge[stateEdge, loop below]   node[edgeLabel] {\texttt{nextRow}} (E);
+        
 \end{tikzpicture}
 }
 \caption{Database Resource Usage Protocol}
@@ -291,7 +294,7 @@ data SQLiteExecuting : ExecutionResult -> Type where
   
 \end{SaveVerbatim}
 \useverb{sqliteexecuting}
-
+\noindent
 Column access functions may only be called when there is a valid row in the buffer, as signified by the input resource of each operation.
 
 \begin{SaveVerbatim}{getcoltext}
@@ -305,7 +308,18 @@ GetColumnText : Column ->
 \useverb{getcoltext}
 
 \noindent
-In order to provide the necessary static guarantee that there is a valid row to process in the buffer, we make use of the \texttt{if\_valid} construct. The \texttt{nextRow} function 
+In order to provide the necessary static guarantee that there is a valid row to process in the buffer, we make use of the \texttt{if\_valid} construct. The \texttt{nextRow} function will either fetch a row into the buffer, or indicate that a row could not be loaded, as shown by its type:
+
+\begin{SaveVerbatim}{nextrow}
+nextRow : EffM IO [SQLITE (SQLiteExecuting ValidRow)] 
+                  [SQLITE (Either (SQLiteExecuting InvalidRow)
+                                  (SQLiteExecuting ValidRow))] 
+                  StepResult
+\end{SaveVerbatim}
+\useverb{nextrow}
+
+\noindent
+The \texttt{if\_valid} construct provides failure checking functionality, allowing different operations to be performed depending on whether or not a row was successfully fetched for processing.
 %If a failure happens at any point during the computation, the resource is
 %updated to reflect the failure: if, for example, the library failed to create a
 %connection to the database, the resource value would be updated to
@@ -333,19 +347,10 @@ In order to provide the necessary static guarantee that there is a valid row to 
 %\end{SaveVerbatim}
 %\useverb{stepres}
 
-\noindent
-Each call to \texttt{nextRow}, which is a wrapper around the underlying
-\texttt{sqlite3\_step()} C library function, returns a result of type
-\texttt{StepResult}, which is then reflected in the resource. Calls to
-\texttt{sqlite3\_step()} are only executed if the previous \texttt{StepResult}
-is either \texttt{Unstarted} or \texttt{StepComplete}. We may therefore
-statically guarantee that only calls that will return a valid result are
-executed. 
-
 By incorporating pointers to open connections and prepared statements into the
 resource associated with the effect, we introduce a further layer of
-abstraction, in order to hide implementation details from the developer and
-encourage cleaner, less error-prone code. 
+abstraction, which hides implementation details from the developer and
+encourages less error-prone code. 
 
 \subsubsection{Example}
 
@@ -361,7 +366,7 @@ We define a function \texttt{textSel} of type:
 \begin{SaveVerbatim}{sqleffty}
 
 String ->
-Eff IO [SQLITE ()] (Either String (List (String, String)))
+Eff IO [SQLITE ()] (Either QueryError (List (String, String)))
 
 \end{SaveVerbatim}
 \useverb{sqleffty}
@@ -376,26 +381,30 @@ database, or an error will be returned.
 
 \begin{SaveVerbatim}{testsel}
 testSelect : String -> Eff IO [SQLITE ()] 
-             (Either String (List (String, String)))
+             (Either QueryError (List (String, String)))
 testSelect dept = do
-  open_db <- openDB "people.db"
-  if open_db then do
+  db_res <- openDB "people.db"
+  if_valid then do
     let sql = "SELECT name, address FROM `staff` 
                     WHERE dept = ?;"
     sql_prep_res <- prepareStatement sql
-    if sql_prep_res then do 
-      startBind
+    if_valid then do 
       bindText 1 dept
-      finishBind
-      beginExecution
-      results <- collectResults
-      finaliseStatement
-      closeDB
-      return $ Right results
-    else do err <- stmtFail
-            return $ Left err
-  else do err <- connFail
-          return $ Left err 
+      bind_res <- finishBind
+      if_valid then do
+        executeStatement
+        results <- collectResults
+        finaliseInvalid
+        closeDB
+        Effects.pure $ Right results
+      else do
+        cleanupBindFail
+        Effects.pure $ Left (getBindError bind_res)
+    else do
+      cleanupPSFail
+      Left $ getQueryError sql_prep_res
+  else do 
+    Effects.pure $ Left (getQueryError db_res)
 \end{SaveVerbatim}
 
 \begin{figure}[h]
@@ -416,29 +425,26 @@ A call to \texttt{prepareStatement} attempts to create a prepared statement,
 and a subsequent call to \texttt{beginExecution} allows data to be retrieved
 from the database.
 
-\texttt{CollectResults} makes a call to
-\texttt{nextRow} in order to make the next row of the result set available for
-processing, and uses \texttt{getColumnText} and \texttt{getColumnInt}
+\texttt{CollectResults} operates on the row currently held in the buffer. Firstly, the function checks, through the use of the \texttt{if\_valid} construct, that there is a valid row in the buffer, and if so uses the \texttt{getColumnText} and \texttt{getColumnInt} functions
 to retrieve the data from the database. This function is then
-recursively called until there are no more rows to process.
+called recursively until there are no more rows to process.
 
 \begin{SaveVerbatim}{collectresty}
-
-collectResults : Eff IO 
-            [SQLITE (SQLiteRes PreparedStatementExec)] 
-            (List (String, Int))
+collectResults :
+  EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) 
+                          (SQLiteExecuting ValidRow))] 
+          [SQLITE (SQLiteExecuting InvalidRow)] 
+          (List (String, Int))
 \end{SaveVerbatim}
 
 \begin{SaveVerbatim}{collectres}
-collectResults = do
-  step_result <- nextRow
-  case step_result of
-      StepComplete => do name <- getColumnText 1
-                         age <- getColumnInt 2
-                         xs <- collectResults
-                         return $ (name, age) :: xs
-      NoMoreRows => return []
-      StepFail => return [] 
+collectResults = 
+  if_valid then do name <- getColumnText 1
+                   age <- getColumnInt 2
+                   step_res <- nextRow
+                   xs <- collectResults
+                   return $ (name, age) :: xs
+  else return []
 
 \end{SaveVerbatim}
 
@@ -474,7 +480,7 @@ ResultSet = List (List DBVal)
 \useverb{resultset}
 
 \noindent
-Using these, we may implement a function, \texttt{ExecuteSelect}, which, given
+Using these, we may implement a function, \texttt{executeSelect}, which, given
 a query, a list of variables to bind and their associated indices within the
 query, and a function which is used to extract information out of each returned
 database row, returns either a \texttt{ResultSet} or an error.
@@ -483,10 +489,9 @@ database row, returns either a \texttt{ResultSet} or an error.
 
 executeSelect : 
   String -> String -> List (Int, DBVal) -> 
-  Eff m [SQLITE (SQLiteRes PreparedStatementExec)] 
-                 (List DBVal) -> 
-  Eff m [SQLITE ()] (Either String ResultSet)
-  
+  (Eff IO [SQLITE (SQLiteExecuting ValidRow)] (List DBVal)) -> 
+  Eff IO [SQLITE ()] (Either QueryError ResultSet)
+ 
 \end{SaveVerbatim}
 \useverb{execsel}
 

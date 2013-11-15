@@ -336,6 +336,7 @@ setSession user_id = do
   create_res <- lift' (createSession [(USERID_VAR, SInt user_id)])
   sess_res <- lift' setSessionCookie
   db_res <- lift' writeSessionToDB
+
   pure (sess_res && db_res)
 
 
