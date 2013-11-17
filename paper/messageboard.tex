@@ -12,12 +12,18 @@ unique thread ID, a title, and the ID of the user who created the thread; and
 each post belongs, the content of the post, and the ID of the user that created
 the post.
 
-Secondly, we use a GET variable, \texttt{action}, to indicate which page of the
+Secondly, we use a \texttt{GET} variable, \texttt{action}, to indicate which page of the
 message board should be displayed, and pattern-match on these to call the
 appropriate function which displays the page. Some pages, such as the page
 which shows all of the posts in a thread, require a second argument,
-\texttt{thread\_id}.  \subsection{Handling requests}
-The entry point to any CGI application is the \texttt{main} function. From here, we run the remainder of the program through a call to \texttt{runCGI}, which we initialise with empty initial environments for the CGI, Session and SQLite effects, so they may be used in further computations. 
+\texttt{thread\_id}.  
+
+\subsection{Handling requests}
+The entry point to any CGI application is the \texttt{main} function. From
+here, we run the remainder of the program through a call to \texttt{runCGI},
+which we initialise with empty initial environments for the \texttt{CGI}, 
+\texttt{Session} and
+\texttt{SQLite} effects, so they may be used in further computations. 
 
 \begin{SaveVerbatim}{msgmain}
 
@@ -31,7 +37,13 @@ main = do (runCGI [initCGIState,
 \useverb{msgmain}
 
 \noindent
-We specify a function, \texttt{handleRequest}, which firstly calls \texttt{isHandlerSet} to determine whether submitted form data must be handled. If so, then the form handling routine is called, which executes the corresponding handler function as specified in Section ~\ref{formhandling}. If not, then the \texttt{handleNonFormRequest} function is called, which inspects the GET variables in order to display the correct page.
+We define a function, \texttt{handleRequest}, which firstly determines
+whether submitted form data must be handled, by checking whether a handler
+variable exists.
+If so, then the form handling routine is called, which executes the
+corresponding handler function as specified in Section ~\ref{formhandling}. If
+not, then the \texttt{handleNonFormRequest} function is called, which inspects
+the \texttt{GET} variables in order to display the correct page.
 
 \begin{SaveVerbatim}{handlereq}
 
@@ -52,7 +64,7 @@ handleRequest = do
 \useverb{handlereq}
 
 \subsection{Thread Creation}
-We specify four forms: one to handle registration, one to handle logging in,
+We create four forms: one to handle registration, one to handle logging in,
 one to handle the creation of new threads, and one to handle the creation of
 new posts. For example, the form used to create a new thread
 contains elements for the title of the new thread and the content of the
@@ -99,7 +111,7 @@ handlers = [
 \useverb{msghandlers}
 
 \noindent
-Creating a new thread (show in Figure \ref{fig:handlethread})
+Creating a new thread (shown in Figure \ref{fig:handlethread})
 requires a user to be logged in, so that the thread
 starter may be recorded in the database. In order to do this, we make use of
 the session handler. We define a function \texttt{withSession}, which attempts
@@ -251,11 +263,12 @@ handleLoginForm (Just name) (Just pwd) = do
 \end{figure}
 
 Implementations for the insertion and display of posts, alongside registration,
-are similar in form to those described above, and are as such omitted from this
-paper.
+follow the same structure.
 
 Although we have described a relatively simple application, we have shown that
-through the use of embedded domain-specific languages, we may write verified
+through the use of embedded domain-specific languages, 
+and particularly by encapsulating resource usage protocols in the types,
+we can write verified
 code that fails to compile should resources be incorrectly accessed.
 Additionally, we have used the form handling mechanism to simply handle the
 arguments passed by the user. Importantly, we have shown that dependent types

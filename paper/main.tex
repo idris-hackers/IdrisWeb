@@ -81,16 +81,16 @@
 
 \begin{abstract}
 Dependently-typed languages allow precise types to be used during development,
-facilitating easier reasoning about the operation of programs. However,
+facilitating reasoning about programs. However,
 stronger types bring a disadvantage that it becomes increasingly difficult to
 write programs that are accepted by a type checker and additional proofs may
 have to be specified by a programmer.
 
-Embedded domain-specific languages (EDSLs) address this problem by introducing
-a layer of abstraction over more specific underlying types, allowing
-domain-specific code to be written in a high-level languages which uses
-dependent types to enforce certain invariants without additional proof
-obligations. 
+Embedded domain-specific languages (EDSLs) can help address this problem by
+introducing a layer of abstraction over more precise underlying types,
+allowing domain-specific code to be written in a high-level language which uses
+dependent types to enforce invariants without imposing additional proof
+obligations on an application programmer. 
 
 In this paper, we apply this technique to web programming.  Using the
 dependently typed programming language \Idris{}, we introduce an EDSL to

@@ -3,7 +3,7 @@
 \label{form}
 Programming web applications often involves processing user data, which may
 then be used in further effectful computations. Data submitted using a form is
-transmitted over the internet as a string as part of an HTTP request, which
+transmitted as a string as part of an HTTP request, which
 traditionally involves losing associated type information.
 
 This can in turn lead to risks; developers may assume that data is
@@ -28,9 +28,9 @@ semantics of the query, allowing an attacker to execute a blind SQL injection
 attack. % Might be a good idea to cite an SQL injection paper which uses LIMIT
 % clauses here
 
-In this section, we present a mechanism by which we introduce a DSL
+In this section, we present a DSL
 for the creation of web forms which preserve type information, implemented
-as a dependent algebraic effect. Once the form has
+as a resource-dependent algebraic effect. Once the form has
 been submitted, retrieved information is passed directly to a
 developer-specified function for handling, without the need to manually check
 and deserialise data. 
@@ -38,19 +38,20 @@ and deserialise data.
 We begin with a simple example of a form which requests a user's name, and
 echoes it back. Firstly, we define a form handler which echoes back a string
 provided by the form handler. It has one argument of type \texttt{Maybe
-String}, which accounts for the possibility that the user may have specified
-incorrect data within the form.
+String}, which accounts for the possibility that the user may have 
+provided invalid data:
 
 \begin{SaveVerbatim}{sayhello}
 
-sayHello : Maybe String -> 
-           FormHandler [CGI (InitialisedCGI TaskRunning)]
-sayHello (Just name) = output ("Hello, " ++ name ++ "!")
-sayHello _ = output "Error!"
+echo : Maybe String -> 
+     FormHandler [CGI (InitialisedCGI TaskRunning)]
+echo (Just name) = output ("Hello, " ++ name ++ "!")
+echo _ = output "Error!"
 
 \end{SaveVerbatim}
 \useverb{sayhello}
 
+\noindent
 We then specify this in a list of handlers, detailing the arguments, available effects, handler function and unique identifier:
 
 \begin{SaveVerbatim}{handerlist}
@@ -58,13 +59,15 @@ We then specify this in a list of handlers, detailing the arguments, available e
 handlers : HandlerList
 handlers = [handler args=[FormString], 
                     effects=[CgiEffect], 
-                    fn=sayHello, 
-                    name="sayHello"]
+                    fn=echo, 
+                    name="echo"]
 
 \end{SaveVerbatim}
 \useverb{handerlist}
 
-We also define a form to take in a name from the user, and specify that it should use the \texttt{sayHello} handler.
+\noindent
+We also define a form to take in a name from the user, and specify that it
+should use the \texttt{echo} handler.
 
 \begin{SaveVerbatim}{showhello}
 
@@ -72,7 +75,7 @@ showHelloForm : UserForm
 showHelloForm = do
   addTextBox "Name" FormString Nothing
   useEffects [CgiEffect]
-  addSubmit sayHello handlers
+  addSubmit echo handlers
 
 \end{SaveVerbatim}
 \useverb{showhello}
@@ -167,10 +170,12 @@ using (G : List FormTy, E : List WebEffect)
 \label{fig:formeffect}
 \end{figure*}
 
-In order to specify a form, we once again use \texttt{Effects}. By recording
+\noindent
+Again, we use \texttt{Effects} to build a form.
+By recording
 the type of each form element as it is added in the type of the form, we may
 statically ensure that the user-supplied handler function is of the correct
-type to handle the data supplied by the form: the specification of an
+type to handle the data supplied by the form: using an
 incompatible handler will result in a compile-time type error. The \texttt{Form}
 effect and associated resource \texttt{FormRes} is given in Figure 
 \ref{fig:formeffect}.
@@ -196,12 +201,12 @@ data Form : Effect where
 \useverb{formeffsmall}
 
 \noindent
-These make use of the resource associated with the effect, \texttt{FormRes}, to
-construct the form. Adding a field such as a text box adds a new type, \texttt{fty}
-to the list of field types, carried in the resource. When the form is complete,
-the \texttt{Submit} operation adds a submit button and returns the
-HTML text for the form, flushing the list of field
-types, and using it to construct the type for an appropriate handler function.
+These use the resource associated with the effect, \texttt{FormRes}, to
+construct the form. Adding a field such as a text box adds a new type,
+\texttt{fty} to the list of field types, carried in the resource. When the form
+is complete, the \texttt{Submit} operation adds a submit button and returns the
+HTML text for the form, flushing the list of field types, and using it to
+construct the type for an appropriate handler function.
 %
 To specify a form instance, we define a function of type \texttt{UserForm}:
 
@@ -215,9 +220,9 @@ UserForm = EffM m [FORM (FormRes [])
 \useverb{userform}
 
 \noindent
-All forms are required to include a submit button, as mandated by the
-requirement that 
-
+%All forms are required to include a submit button, as mandated by the
+%requirement that 
+%
 The input and output resource contains an empty list of types, which means that
 any form which includes fields must also include a submit button. Adding fields
 adds to the list of types, and only adding a submit button empties that list.
@@ -229,12 +234,12 @@ Handlers may only be associated with a form if they have argument types
 corresponding to the types associated with the form elements. Additionally, we
 wish to name the function in order for it to be serialised, whilst requiring a
 proof that the specified name is associated with the function. If this were not
-the case, it would be possible to specify a function which satisfies the type
-requirement, without guaranteeing that it the serialised data corresponded to
-that function, thus rendering the check pointless. 
+required, it would be possible to use a function satisfying the type
+requirement, without guaranteeing that the serialised data corresponded to
+that function.
 
 Before associating a handler function with the form, we must specify the
-effects available to the handler. This is done through the use of the
+effects available to the handler. This is done with
 \texttt{useEffects}, which updates the list of effects in the type of the form
 resource. By doing this, we may subsequently use the effects in calculations at
 the type level, in particular when calculating the type of the handler function
@@ -316,13 +321,15 @@ MkHandlerFnTy = (List FormTy, List WebEffect)
 
 \end{SaveVerbatim}
 
-\begin{SaveVerbatim}{mkhandlerfn}
+\begin{SaveVerbatim}{mkhandlerfnp}
 
 mkHandlerFn' : List FormTy -> List WebEffect -> Type
 mkHandlerFn' [] effs = FormHandler (map webEffect effs) 
 mkHandlerFn' (x :: xs) effs = Maybe (interpFormTy x) -> 
                               mkHandlerFn' xs effs 
+\end{SaveVerbatim}
 
+\begin{SaveVerbatim}{mkhandlerfn}
 mkHandlerFn : MkHandlerFnTy -> Type 
 mkHandlerFn (tys, effs) = mkHandlerFn' tys effs 
 
@@ -330,13 +337,15 @@ mkHandlerFn (tys, effs) = mkHandlerFn' tys effs
 
 \useverb{mkhandlerfnty}
 
+\useverb{mkhandlerfnp}
+
 \useverb{mkhandlerfn}
 
 \noindent
 The \texttt{mkHandlerFn} function takes a tuple describing the arguments and
 web effects available to the handler function. When constructing the function
-type, we encase all arguments withing \texttt{Maybe} type, in order to handle
-failure should the supplied data fail to parse to the specified type.
+type, we wrap all arguments in a \texttt{Maybe}, in order to handle
+failure should the supplied data fail to parse as the required type.
 %
 To store a reference to a handler function, we use the \texttt{HandlerFn} type:
 
@@ -349,7 +358,7 @@ HandlerFn = (ft ** (mkHandlerFn ft, String))
 \useverb{handlerfn}
 
 \noindent
-The \texttt{**} notation denotes a dependent pair, where the type of the second
+The \texttt{**} notation denotes a dependent pair, in which the type of the second
 element of the pair is parameterised over the value of the first element. It is
 an existential binding;
 the notation \texttt{(x ** P x)} can be read as ``there exists an \texttt{x} such that 
@@ -360,8 +369,7 @@ which is used to serialise a
 reference to the handler function. 
 
 In order to abstract away from this implementation detail, we make use of
-\idris{} syntax rewriting rules. This allows us to define the following syntax
-rewrite rule:
+\idris{} syntax rewriting rules. This allows us to define the following:
 
 \noindent
 \begin{SaveVerbatim}{syntaxhandler}
@@ -377,14 +385,14 @@ syntax
 We may then define handlers in a more intuitive fashion, without being
 concerned with the implementation details. This allows us to write a handler
 with one String argument, making use of the CGI effect, associated with the
-\texttt{sayHello} handler function as follows:
+\texttt{echo} handler function as follows:
 
 \begin{SaveVerbatim}{handlerex}
 
 handler args=[FormString], 
         effects=[CgiEffect], 
-        fn=sayHello, 
-        name="sayHello"
+        fn=echo, 
+        name="echo"
 
 \end{SaveVerbatim}
 \useverb{handlerex}
@@ -400,7 +408,7 @@ HandlerList = List HandlerFn
 \end{SaveVerbatim}
 \useverb{handlerlist}
 
-To enforce the requirement that a supplied handler function must reside in the
+To enforce the requirement that a supplied handler function must be in the
 list of available handlers, and therefore allow us to retrieve the name with
 which to serialise the handler, we require a \textit{list membership proof},
 \texttt{FnElem f fns}, which statically guarantees that a given item resides in
@@ -425,9 +433,9 @@ is a proof that the element is at the head of the current point of the list,
 whereas \texttt{FnThere} is a proof that the element is in the tail of 
 the list. 
 %TODO: this should probably be rewritten
-We then use a simple automated proof search to
-automatically generate the proof at compile time, should one exist. The proof
-may then be used in subsequent computations: in our case, we use it to retrieve
+We then use an automatic proof search to
+generate the proof at compile time, should one exist. The proof
+may then be used in subsequent computations: we use it to retrieve
 the unique identifier for the function. If the automated proof search fails,
 compilation will fail.
 
@@ -438,11 +446,11 @@ server.
 
 Although sending details of the handler function to the client may appear to be
 a security risk, we envisage that the use of symmetric encryption or a
-cryptographic nonce would alleviate this. Ultimately, we hope to implement a
+cryptographic nonce would mitigate this. Ultimately, we hope to implement a
 web server with persistent state, which would eliminate the need for
 serialisation altogether.
 
-Running form construction is achieved as an operation of the CGI
+Running form construction is achieved as an operation of the \texttt{CGI}
 effect, \texttt{AddForm}, which then outputs the generated HTML to the page.
 The generated metadata describing the handler function is serialised as a
 hidden HTML field.
@@ -465,7 +473,7 @@ equal, returning a proof of equality if so, and a proof of inequality if not.
 
 \begin{SaveVerbatim}{deceqty}
 
-decEq : DecEq t => (x : t) -> (y : t) -> Dec (x1 = x2)
+decEq : DecEq t => (x : t) -> (y : t) -> Dec (x = y)
 
 \end{SaveVerbatim}
 \useverb{deceqty}
@@ -504,8 +512,8 @@ checkFunctions reg_ty frm_ty reg_fn with
 
 \noindent
 We may then parse the arguments according to the types specified by the handler
-function, and then apply the arguments to the handler function through the use
-of partial application. Finally, we may run the handler function, ensuring that
+function, and then apply the arguments to the handler function.
+Finally, we may run the handler function, ensuring that
 all updates made to the CGI state are propagated.
 
 %-----------------------------

@@ -84,17 +84,19 @@ framework, as with the form construction effect.
 
 \section{Conclusions}
 
-To date,
-dependently-typed languages have remained relatively unused for practical
-purposes. Advances in embedded domain-specific languages
-have allowed many of the advantages of such languages, including the additional
-guarantees given by the successful compilation of a program (assuming the use
-of specific enough types) to be adopted without additional proofs.
+Dependently-typed languages promise to support machine checkable program
+correctness proofs, but to date they have remained relatively unused for
+practical purposes. By using embedded domain-specific languages, we can
+abstract away some of the complexities of creating correctness proofs and
+provide expressive libraries, giving guarantees by the successful compilation
+of a program (assuming the use of specific enough types) without additional
+proofs.
 
-Our framework, through the use of dependent types, provides several static
-guarantees. Data submitted by users is inherently unsafe due to the possibility
-of attacks such as SQL injection, and this particular threat is ameliorated due
-to elements to be associated with specific types during form construction. This
+Our framework provides several static
+guarantees. Data submitted by users is inherently unsafe and
+means systems are vulnerable to attacks
+such as SQL injection. This particular threat is ameliorated due
+to elements being associated with specific types during form construction. This
 immediately eliminates the possibilities of SQL injection attacks on non-string
 types. Since failures are handled transparently, no runtime errors are output
 to the browser, meaning that attackers may not use such information to aid
@@ -102,24 +104,86 @@ attacks. Additionally, since checking is performed on the types of the form
 elements and the types of arguments accepted by the handler, it is impossible
 to associate a form with a handler incompatible with the submitted data.
 
-Many external libraries must also adhere to a resource usage protocol, in order to ensure correct operations. Since such libraries do not have as expressive a type system as \idris{}, however, incorrect usage is still possible, for example by developers forgetting to release acquired resources or failing to initialise a library correctly. By creating high-level bindings to these libraries, however, we may statically enforce these resource-usage protocols, ensuring that the libraries are used correctly. Whilst previous work has demonstrated that this is possible through the use of embedded DSLs \cite{brady:edsl} and parameterised algebraic effects \cite{brady:effects}, this paper has provided more substantial examples of real-world applications. 
+Many external libraries also follow (unchecked or dynamically checked) 
+resource usage protocols.
+Incorrect usage is however still possible, for
+example by forgetting to release acquired resources or failing to
+initialise a library correctly. By creating high-level bindings to these
+libraries, however, we may statically enforce these resource-usage protocols,
+ensuring that the libraries are used correctly. Whilst previous work has
+demonstrated that this is possible through the use of embedded DSLs
+\cite{brady:edsl} and dependent algebraic effects \cite{brady:effects},
+this paper has provided more substantial examples of real-world applications. 
 
-In particular, the framework guarantees that it is not possible for CGI to produce an internal server error due to content being written to the remote host prior to headers. With regard to database access, we may statically guarantee that library calls are made in the correct order, and calls to retrieve rows of data are made only when more data is available. Additionally, by recording any failures in the resource associated with the database effect, we may ensure that any failures at certain stages in the process may be correctly dealt with, and not propagate to further library calls---if a prepared statement fails to compile, for example, the framework guarantees that it will not be executed, without causing a fatal runtime error or memory access violation.
+In particular, the framework guarantees that it is not possible for a CGI 
+application to
+produce an internal server error due to content being written to the remote
+host prior to headers. With regard to database access, we may statically
+guarantee that library calls are made in the correct order, and calls to
+retrieve rows of data are made only when more data is available. Additionally,
+by recording any failures in the resource associated with the database effect,
+we may ensure that any failures at certain stages in the process may be
+correctly dealt with, and not propagate to further library calls---if a
+prepared statement fails to compile, for example, the framework guarantees that
+it will not be executed, without causing a fatal runtime error or memory access
+violation.
+%
+Enforcing resource usage protocols also guards against common programmer
+errors, saving debugging time by identifying errors at compile time.
 
-Enforcing resource usage protocols also guards against common programmer errors, saving debugging time by identifying errors at compile time.
 \subsection{Further Work}
-We have shown that embedded domain-specific languages using dependent types and algebraic effects can be used to increase confidence in web applications by providing additional static guarantees about runtime behaviour, but much more can be done using the same approach.
 
-There are many other applications which make use of specific resource usage protocols, for example popular libraries such as \textit{libgcrypt}\footnote{\texttt{http://directory.fsf.org/wiki/Libgcrypt}}. Applying a similar approach would allow for sensitive programs requiring cryptographic routines to be written using a language with full dependent types, in turn adding an extra layer of confidence in their security. 
+We have shown that embedded domain-specific languages using dependent types and
+algebraic effects can be used to increase confidence in web applications by
+providing additional static guarantees about runtime behaviour, but much more
+can be done using the same approach.
 
-Whilst the use of CGI allows for experimenting with the use of dependent types in a real-world scenario such as web programming, there remain practical considerations about its scalability, as a separate process must be created for each individual request. We believe that the use of FastCGI may alleviate this, but ultimately, we would like to create a web server written in \idris{}, which would make more efficient usage of resources. 
+There are many other applications which make use of specific resource usage
+protocols, for example popular libraries such as
+\textit{libgcrypt}\footnote{\texttt{http://directory.fsf.org/wiki/Libgcrypt}}.
+Applying a similar approach would allow for sensitive programs requiring
+cryptographic routines to be written using a language with full dependent
+types, in turn adding an extra layer of confidence in their security. 
 
-Since at this stage we have concentrated on the use of dependent types for enforcing resource usage protocols and type-safe form handling, we currently handle the generation of HTML in an unstructured manner. Future work will entail a DOM library to facilitate the generation and manipulation of HTML, in turn giving stronger guarantees about its correctness. Other planned features include a template system, allowing for web pages to be automatically generated from data, and an object-relational mapping system which will allow users to manipulate records which can then be automatically written to the database, instead of having to update tables manually via SQL queries.
+Whilst the use of CGI allows for experimenting with the use of dependent types
+in a real-world scenario such as web programming, there remain practical
+considerations about its scalability, as a separate process must be created for
+each individual request. We believe that the use of FastCGI may alleviate this,
+but ultimately, we would like to create a web server written in \idris{}, which
+would make more efficient usage of resources. 
 
-Type providers, as originally implemented in F\# \cite{msr:tp}, are an interesting method by which external data sources may be used to import external information, such that it may be used during compilation. Through the use of this technique, it becomes possible to make use of the extra type information in order to statically ensure the validity of artefacts such as SQL queries and data structures. If data structures within the program do not conform to a given database schema, for example, then the program will not type-check and as such will produce a compile-time error. 
-This is extended to \idris{} through the implementation of dependent type providers \cite{christiansen:dtp}, which makes use of the fact that types can be calculated by functions to avoid generating extra code in the type provider step. Dependent type providers additionally have stronger safety guarantees as they may not generate unchecked code, but at the same time this is matched by a decrease in expressiveness. Nonetheless, such techniques provide a promising mechanism to verify the semantic soundness of programs and we look to investigate their integration in further work.
+Since at this stage we have concentrated on the use of dependent types for
+enforcing resource usage protocols and type-safe form handling, we currently
+handle the generation of HTML in an unstructured manner. Future work will
+entail a DOM library to facilitate the generation and manipulation of HTML, in
+turn giving stronger guarantees about its correctness. Other planned features
+include a template system, allowing for web pages to be automatically generated
+from data, and an object-relational mapping system which will allow users to
+manipulate records which can then be automatically written to the database,
+instead of having to update tables manually via SQL queries.
 
-Dependently-typed languages provide great promise for the construction of secure and correct programs. Through the use of embedded domain-specific languages, we hope that more developers may benefit from the extra guarantees afforded by dependent types, resulting in more stable, secure applications.
+Type providers, as originally implemented in F\# \cite{msr:tp}, are an
+interesting method by which external data sources may be used to import
+external information, such that it may be used during compilation. 
+In this way, it becomes possible to use the extra type
+information to statically ensure the validity of artefacts such as SQL
+queries and data structures. If data structures within the program do not
+conform to a given database schema, for example, then the program will not
+type-check.  This has been implemented for 
+\idris{} 
+\cite{christiansen:dtp}, exploiting the fact that types can be
+calculated by functions to avoid generating extra code in the type provider
+step. Dependent type providers additionally have stronger safety guarantees as
+they may not generate unchecked code, but at the same time this is matched by a
+decrease in expressiveness. Nonetheless, such techniques provide a promising
+mechanism to verify the semantic soundness of programs and we look to
+investigate their integration in further work.
+
+Dependently-typed languages provide great promise for the construction of
+secure and correct programs. Through the use of embedded domain-specific
+languages, we hope that more developers may benefit from the extra guarantees
+afforded by dependent types, resulting in more stable, secure applications.
+
 % Cryptography bindings would be really good.
 % Integration with a web server instead of doing everything over CGI
 % Improvements to form handling system

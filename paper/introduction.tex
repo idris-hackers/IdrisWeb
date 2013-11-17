@@ -10,8 +10,8 @@ who suffered a well-publicised and extremely costly SQL Injection breach in
 
 Many web applications are written in dynamically-checked scripting languages
 such as PHP, Ruby or Python, which facilitate rapid development
-\cite{w3techs:webpls}. A significant drawback, however, is that such languages
-do not provide  the same static guarantees about runtime behaviour afforded by
+\cite{w3techs:webpls}. However, such languages
+do not provide the same static guarantees about runtime behaviour afforded by
 programs with more expressive, static type systems, instead relying on
 extensive unit testing to ensure correctness and security. 
 
@@ -24,23 +24,22 @@ user, password and name respectively:
 
 \begin{SaveVerbatim}{conn}
 
-  $conn = new mysqli("localhost", "username", 
-                     "password", "db");
+$conn = new mysqli("localhost", "username", 
+                   "password", "db");
 
 \end{SaveVerbatim}
 \useverb{conn}
 
 \noindent
-We then check to see if the connection was successful, and exit
-if not.  This check is optional, so
-it would be possible to omit it. However, this would cause
-problems with later steps.
+We should then check to see if the connection was successful, and exit
+if not:
+%This check is optional, so
+%it would be possible to omit it. However, this would cause
+%problems with later steps.
 
 \begin{SaveVerbatim}{connerr}
 
-  if (mysqli_connect_errno()) {
-      exit();
-  }
+if (mysqli_connect_errno()) { exit(); }
 
 \end{SaveVerbatim}
 \useverb{connerr}
@@ -66,10 +65,10 @@ Failure to execute a statement before attempting to fetch rows would cause an er
 \begin{SaveVerbatim}{stmtexec}
 
 $stmt->execute();
-  $stmt->bind_result($name, $address);
-  while ($stmt->fetch()) {
-    printf("Name: %s, Age: %s", $name, $age);
-  }
+$stmt->bind_result($name, $address);
+while ($stmt->fetch()) {
+  printf("Name: %s, Age: %s", $name, $age);
+}
 
 \end{SaveVerbatim}
 \useverb{stmtexec}
@@ -87,7 +86,8 @@ closed in order to discard the associated resources:
 \useverb{connclose}
 
 \noindent
-Even in this small example, there exists a specific resource usage protocol.
+Even in this small example, there exists a precise resource usage protocol
+which must be followed for successful and robust operation.
 Firstly, a connection to the database must be opened. The object-oriented style
 used in the example encapsulates this to an extent, as the object must be
 created in order for operations to be performed, however it is less obvious in
@@ -102,20 +102,22 @@ retrieving rows, which would cause a runtime error. Similarly, a programmer may
 omit closing the statement or connection, which can lead to
 problems such as resource leaks in longer-running server applications.
 However, in conventional programming languages, there is no way to check
-automatically that a protocol is followed.
+automatically, at compile-time, that a protocol is followed.
 
 In contrast, the use of \textit{dependent types} makes it possible
 to specify a program's behaviour precisely, and to check that a 
 specification is followed.
 %
-The difficulty is 
-that automatic verification by a compiler can be difficult or
+Unfortunately, automatic verification by a compiler can be difficult or
 often impossible, requiring additional proofs to be given by the programmer.
 
-This complexity can be ameliorated through the use of \textit{embedded
-domain-specific languages} (EDSLs), which aim to abstract away the
-complexity of the underlying type system. EDSLs allow domain experts to
-write verified domain-specific code, with the EDSL itself providing the implicit proof that the written code is correct.
+This complexity can be addressed through the use of \textit{embedded
+domain-specific languages} (EDSLs) to abstract away the complexity of the
+underlying type system. Embedding a domain-specific language in
+a dependently typed host language
+allows domain experts to write 
+domain-specific code, with the EDSL itself used to provide the proof that the
+code is correct.
 
 \idris{} \cite{brady2013idris} is a language with full dependent types, and
 extensive support for EDSLs through overloading and syntax macros. Through the
@@ -132,27 +134,40 @@ about the correctness and security of web applications, whilst minimising
 additional development complexity. In particular, we present:
 
 \begin{itemize}
-\item A form-handling mechanism, which preserves type information and
-manages user input, therefore
-increasing applications' resilience to attacks such as SQL injection and cross-site scripting.
-
 \item Representations of CGI, Databases and sessions as
-\textit{resource-dependent algebraic effects}, allowing programs to be accepted only when they
-follow clearly defined resource usage protocols.
+\textit{resource-dependent algebraic effects}, allowing programs to be accepted
+only when they follow clearly defined resource usage protocols. 
+(Section~\ref{rup})
 
-\item A message board application, demonstrating the usage of the framework.
+\item Type-safe form handling, preserving type information and managing
+user input, therefore increasing applications' resilience to attacks such as
+SQL injection and cross-site scripting. (Section~\ref{form})
+
+\item An extended example: a message board application, demonstrating the usage
+of the framework in practice. (Section~\ref{effects})
 
 \end{itemize}
 
-We structure the remainder of this paper as follows. We provide a brief
-overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain
-how this may be used to ensure adherence to resource usage protocols for CGI,
-SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for
-type-safe form handling in Section ~\ref{form}, implemented using
-\texttt{Effects}; and discuss the larger example
-of a message board system making use of these components in Section
-~\ref{messageboard}.
+We achieve these without extending the host language. Every
+resource protocol we implement is pure \Idris{}, using a library for
+resource-dependent algebraic effects~\cite{brady:effects} and \Idris{}'
+features for supporting domain-specific language implementation such as
+syntax macros and overloading. In particular, this means the same techniques
+can be applied to other resources, and most importantly, combinations
+of resources and DSLs implemented in this way are \emph{composable}.
 
-The code used to implement the framework and all associated examples used in this paper is available online at \url{http://www.github.com/idris-hackers/IdrisWeb}.
+%We structure the remainder of this paper as follows. We provide a brief
+%overview of the \texttt{Effects} framework in Section ~\ref{effects}; explain
+%how this may be used to ensure adherence to resource usage protocols for CGI,
+%SQLite and a session handler in Section ~\ref{rup}; describe an EDSL for
+%type-safe form handling in Section ~\ref{form}, implemented using
+%\texttt{Effects}; and discuss the larger example
+%of a message board system making use of these components in Section
+%~\ref{messageboard}.
+
+The code used to implement the framework and all associated examples used in
+this paper is available online at
+\url{http://www.github.com/idris-hackers/IdrisWeb}.
+
 % =================================================
 % =================================================

@@ -1,6 +1,9 @@
 \section{Modelling resource usage protocols}
 \label{rup}
-In this section, we show how three such effects; CGI, database access and a simple session handler, may be implemented, and describe the benefits of developing programs using this technique over simply handling them in the IO context or as part of a monad transformer.
+In this section, we show how three effects 
+(CGI, database access and a simple session handler) may be implemented, and
+describe the benefits of developing programs using this technique over simply
+handling them in \texttt{IO} or as monad transformers.
 
 % =================================================
 
@@ -34,11 +37,24 @@ In this section, we show how three such effects; CGI, database access and a simp
 \label{fig:cgistates}
 \end{figure}
 
-CGI is used to invoke an application on a web server, making use of environment variables to convey information gained from an HTTP request and using standard output to communicate with the remote client. Importantly, HTTP headers must be correctly written to the browser prior to any other output; failure to do so will result in an internal server error being shown.
+CGI is used to invoke an application on a web server, making use of environment
+variables to convey information gained from an HTTP request and using standard
+output to communicate with the remote client. Importantly, HTTP headers must be
+correctly written to the browser prior to any other output; failure to do so
+will result in an internal server error being shown.
 
-A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
+%A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
 
-By modelling CGI as a resource-dependent algebraic effect, we may enforce a resource usage protocol which, even though the program may be running in an IO execution context, prevents arbitrary IO from being performed and therefore ensures that the headers are written correctly. In order to accomplish this, we define an effect, \texttt{Cgi}, and an associated resource, \texttt{InitialisedCGI}, which is parameterised over the current state, \texttt{CGIStep}. This resource describes the current state, alongside a \texttt{CGIInfo} record which contains information from the request. We represent an uninitialised CGI process as the unit type, ().
+By modelling CGI as a resource-dependent algebraic effect, we may enforce a
+resource usage protocol which
+%even though the program may be running in an IO execution context, 
+prevents arbitrary IO from being performed and therefore
+ensures that the headers are written correctly. We
+define an effect, \texttt{Cgi}, and an associated resource,
+\texttt{InitialisedCGI}, parameterised over the current state,
+\texttt{CGIStep}, and containing a
+\texttt{CGIInfo} record which contains information from the request. We
+represent an uninitialised CGI process as the unit type, \texttt{()}.
 
 \begin{SaveVerbatim}{cgistep}
 
@@ -63,7 +79,7 @@ effectively specifying a state machine.
 
 Upon creation, the CGI application is uninitialised, meaning that environment variables have not been queried to populate the CGI state. The only operation
 that can be performed in this state is initialisation: by calling
-\texttt{initialise}, a CGIInfo record is populated, and the state transitions
+\texttt{initialise}, a \texttt{CGIInfo} record is populated, and the state transitions
 to \texttt{Initialised}. The \texttt{Init} operation is defined as part of the
 \texttt{Cgi} effect, and involves transitioning from the uninitialised state to
 the initialised state.
@@ -91,15 +107,15 @@ data Cgi : Effect where
 \label{fig:cgieffect}
 \end{figure*}
 
-Additional operations, including those to query POST and GET variables, are
-omitted in the interest of brevity.
+Additional operations, including those to query \texttt{POST} and \texttt{GET}
+variables, are omitted in the interest of brevity.
 
 User code executes in the \texttt{TaskRunning} state. Several operations, such
-as querying the POST and GET variables, are available in this state, alongside
+as querying the \texttt{POST} and \texttt{GET} variables, are available in this state, alongside
 functions to output data to the web page and append data to the response
 headers. It is important to note, that at this stage nothing is written to the
 page, with the \texttt{output} and \texttt{addHeader} functions instead
-modifying the CGIInfo record. This data may then be printed at the end of the
+modifying the \texttt{CGIInfo} record. This data may then be printed at the end of the
 program's execution, in accordance with the resource usage protocol.
 
 After the user code has finished execution, control returns to the library
@@ -109,7 +125,8 @@ process. Since we parameterise the resource over a state, we may ensure that
 certain operations only happen in a particular prescribed order.
 
 In \idris{}, types are first-class, meaning that they may be treated like other
-terms in computations. We may therefore define the following type synonym, used within the CGI section of the framework to denote an effectual CGI program: 
+terms in computations. We may therefore define the following type synonym, used
+within the CGI section of the framework to denote an effectful CGI program: 
 
 \begin{SaveVerbatim}{cgiprog}
 
@@ -157,12 +174,6 @@ and in some cases unhandled errors may cause a deployed web application to
 display an error to the user. Such errors can be used to determine the
 structure of an insecure SQL query, and are often used by attackers to
 determine attack vectors for SQL injection attacks.
-
-Figure~\ref{fig:sqlitestates} shows a resource usage protocol for database
-access, which we have implemented for the SQLite library. Although some additional states are used to capture failing computations, these are omitted from the diagram. The protocol is encapsulated
-by the \texttt{Sqlite} effect (Figure \ref{fig:dbeffect}; we again omit some operations, such as those to
-bind and retrieve data types other than \texttt{String}, in the interest of
-brevity).
 
 \begin{SaveVerbatim}{databaseeff}
 {-                           { Input resource type }    { Output resource type }             { Value }           -}
@@ -234,12 +245,19 @@ data Sqlite : Effect where
 \label{fig:sqlitestates}
 \end{figure}
 
-\noindent
+Figure~\ref{fig:sqlitestates} shows a resource usage protocol for database
+access, which we have implemented for the SQLite library. Although some
+additional states are used to capture failing computations, these are omitted
+from the diagram.
+The effect implementation is given in Figure \ref{fig:dbeffect}.
+%
 There are three main phases involved in the usage of the SQLite protocol:
 connection to the database, preparation of a query, and execution of the query.
 We define several resources to encapsulate the state at any given point during the protocol.
 
-We first define the \texttt{SQLiteConnected} resource, which signifies that a successful connection has been made to the database. This resource contains a pointer to the database structure which is used in further computations.
+We first define the \texttt{SQLiteConnected} resource, which signifies that a
+successful connection has been made to the database. This resource contains a
+pointer to the database structure which is used in further computations.
 
 \begin{SaveVerbatim}{sqliteconnected}
 
@@ -250,34 +268,39 @@ data SQLiteConnected : Type where
 \useverb{sqliteconnected}
 
 \noindent
-We secondly define the \texttt{SQLitePSSuccess}, \texttt{SQLitePSFail}, and \texttt{SQLiteFinishBindFail} resources to represent the process of creating and binding variables to a prepared statement.
+We secondly define resource types to capture success and failure states
+of binding a prepared statement:
+\texttt{SQLitePSSuccess}, 
+\texttt{SQLitePSFail}, and \texttt{SQLiteFinishBindFail}. The types are
+declared as follows (we leave the definitions abstract):
 
 \begin{SaveVerbatim}{sqliteconnected}
 
 data BindStep = Binding | Bound
-
 data SQLitePSSuccess : BindStep -> Type where
-  SQLitePS       : ConnectionPtr -> 
-                   StmtPtr -> SQLitePSSuccess a
-  SQLiteBindFail : ConnectionPtr -> 
-                   StmtPtr -> 
-                   BindError -> SQLitePSSuccess a
-
-
 data SQLitePSFail : Type where
-  PSFail : ConnectionPtr -> SQLitePSFail
-
 data SQLiteFinishBindFail : Type where
-  SQLiteFBFail : ConnectionPtr -> StmtPtr -> 
-                 SQLiteFinishBindFail
-                 
+
 \end{SaveVerbatim}
+
+%  SQLitePS       : ConnectionPtr -> 
+%                   StmtPtr -> SQLitePSSuccess a
+%  SQLiteBindFail : ConnectionPtr -> 
+%                   StmtPtr -> 
+%                   BindError -> SQLitePSSuccess a
+%data SQLitePSFail : Type where
+%  PSFail : ConnectionPtr -> SQLitePSFail
+%
+%data SQLiteFinishBindFail : Type where
+%  SQLiteFBFail : ConnectionPtr -> StmtPtr -> 
+%                 SQLiteFinishBindFail
+
 \useverb{sqliteconnected}
 
 \noindent
 The \texttt{SQLitePSSuccess} resource indicates that a prepared statement has been correctly created by the underlying library, given a query string. The resource is parameterised by the \texttt{BindStep} type, which indicates whether the binding process has been completed. Should the creation of a prepared statement fail, the resource will be set to \texttt{SQLitePSFail}. 
 
-To avoid having to explicitly check for failures each time a variable is bound to an argument in the prepared statement, any failures are recorded by constructing the resource with the \texttt{SQLiteBindFail} constructor. Should any binding operations be called whilst in this state, the operations will not be passed to the underlying library. After the binding stage has completed, the \texttt{FinishBind} operation is called. This operation inspects the resource and either transitions to the \texttt{SQLitePSSuccess Bound} state, indicating that all bind operations were successful, or to the \texttt{SQLiteFinishBindFail} state, should a binding operation have been unsuccessful. 
+%To avoid having to explicitly check for failures each time a variable is bound to an argument in the prepared statement, any failures are recorded by constructing the resource with the \texttt{SQLiteBindFail} constructor. Should any binding operations be called whilst in this state, the operations will not be passed to the underlying library. After the binding stage has completed, the \texttt{FinishBind} operation is called. This operation inspects the resource and either transitions to the \texttt{SQLitePSSuccess Bound} state, indicating that all bind operations were successful, or to the \texttt{SQLiteFinishBindFail} state, should a binding operation have been unsuccessful. 
 
 SQLite operates by loading database rows into a buffer, the contents of which may then be accessed through several column access functions. After all rows returned by a query have been processed, no further calls to fetch more rows may be made. Additionally, no calls to column access functions may be made whilst there is no row being currently processed. 
 
@@ -295,7 +318,8 @@ data SQLiteExecuting : ExecutionResult -> Type where
 \end{SaveVerbatim}
 \useverb{sqliteexecuting}
 \noindent
-Column access functions may only be called when there is a valid row in the buffer, as signified by the input resource of each operation.
+Column access functions may only be called when there is a valid row in the
+buffer, as signified by the input resources:
 
 \begin{SaveVerbatim}{getcoltext}
 
@@ -308,13 +332,18 @@ GetColumnText : Column ->
 \useverb{getcoltext}
 
 \noindent
-In order to provide the necessary static guarantee that there is a valid row to process in the buffer, we make use of the \texttt{if\_valid} construct. The \texttt{nextRow} function will either fetch a row into the buffer, or indicate that a row could not be loaded, as shown by its type:
+In order to provide the necessary static guarantee that there is a valid row to
+process in the buffer, we make use of the \texttt{if\_valid} construct. The
+\texttt{nextRow} function will either fetch a row into the buffer, or indicate
+that a row could not be loaded, as shown by its type:
 
+\noindent
 \begin{SaveVerbatim}{nextrow}
+
 nextRow : EffM IO [SQLITE (SQLiteExecuting ValidRow)] 
-                  [SQLITE (Either (SQLiteExecuting InvalidRow)
-                                  (SQLiteExecuting ValidRow))] 
-                  StepResult
+         [SQLITE (Either (SQLiteExecuting InvalidRow)
+                 (SQLiteExecuting ValidRow))] StepResult
+
 \end{SaveVerbatim}
 \useverb{nextrow}
 
@@ -354,28 +383,29 @@ encourages less error-prone code.
 
 \subsubsection{Example}
 
-Programs making use of the DSL should look familiar to developers even without
-a background in functional programming. To demonstrate the functionality of the
+%Programs making use of the DSL should look familiar to developers even without
+%a background in functional programming. 
+To demonstrate the 
 library, we return to the previous example of selecting the names and addresses
-of all staff working in a given department. Due to the fact that the
-\texttt{Effects} library overloads the bind operator, we may make use of
-\texttt{do}-notation, facilitating the usage of an imperative style.
+of all staff working in a given department. 
+%Since the
+%\texttt{Effects} library overloads the bind operator, we may make use of
+%\texttt{do}-notation, facilitating the usage of an imperative style.
 We define a function \texttt{textSel} of type:
 
 \noindent
 \begin{SaveVerbatim}{sqleffty}
 
-String ->
-Eff IO [SQLITE ()] (Either QueryError (List (String, String)))
+String -> Eff IO [SQLITE ()] 
+           (Either QueryError (List (String, String)))
 
 \end{SaveVerbatim}
 \useverb{sqleffty}
 
 \noindent
-This means that the program will be run in \texttt{IO}, and must
-start and end with no active resources. The return type indicates that either a
-list of \texttt{(String, String)} pairs, representing names and addresses in the
-database, or an error will be returned.
+The program will be run in \texttt{IO}, and starts and finishes with no active
+resources.  It reutnrs either list of \texttt{(String, String)} pairs,
+representing names and addresses in the database, or an error.
 %This example is shown in Figure
 %\ref{fig:testsel}.
 
@@ -416,20 +446,24 @@ testSelect dept = do
 The program initially attempts to open a connection to the \texttt{people.db}
 database. At this point, since the \texttt{OpenDB} operation has been invoked,
 the program transitions to the \texttt{ConnectionOpened} state. The
-\texttt{openDB} function returns a Boolean value indicating whether or not the
-operation is successful. If not, then the \texttt{connFail} function is called
-to generate an appropriate error and dispose of the resources, as shown in
-~\ref{fig:sqlitestates}.
+\texttt{openDB} function returns a \texttt{Bool} indicating whether the
+operation is successful. If not, the \texttt{connFail} function
+generates an appropriate error and disposes of the resources, as shown in
+Figure~\ref{fig:sqlitestates}.
 
 A call to \texttt{prepareStatement} attempts to create a prepared statement,
 and a subsequent call to \texttt{beginExecution} allows data to be retrieved
 from the database.
-
-\texttt{CollectResults} operates on the row currently held in the buffer. Firstly, the function checks, through the use of the \texttt{if\_valid} construct, that there is a valid row in the buffer, and if so uses the \texttt{getColumnText} and \texttt{getColumnInt} functions
-to retrieve the data from the database. This function is then
-called recursively until there are no more rows to process.
+%
+\texttt{CollectResults} operates on the row currently held in the buffer.
+Firstly, the function checks
+that there is a valid row in the buffer, and if so uses the
+\texttt{getColumnText} and \texttt{getColumnInt} functions to retrieve the data
+from the database. This function is then called recursively until there are no
+more rows to process.
 
 \begin{SaveVerbatim}{collectresty}
+
 collectResults :
   EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) 
                           (SQLiteExecuting ValidRow))] 
@@ -454,12 +488,28 @@ collectResults =
 \noindent
 \useverb{collectres}
 
-In order to decrease unnecessary boilerplate code in user applications, we
-provide functions which abstract out unnecessary parts of this process. In
-order to do this, we define the algebraic data type \texttt{DBVal}, which is a
-tagged union over simple primitive types:
+\noindent
+Using this, we can build a function to execute a full query:
+
+\begin{SaveVerbatim}{execsel}
+
+executeSelect : 
+  String -> String -> List (Int, DBVal) -> 
+  (Eff IO [SQLITE (SQLiteExecuting ValidRow)] 
+               (List DBVal)) -> 
+  Eff IO [SQLITE ()] (Either QueryError ResultSet)
+ 
+\end{SaveVerbatim}
+\useverb{execsel}
+
+\noindent
+This returns either an error, or a set of results, defined
+as follows:
 
 \begin{SaveVerbatim}{dbvals}
+
+ResultSet : Type
+ResultSet = List (List DBVal)
 
 data DBVal = DBInt Int     | DBText String
            | DBFloat Float | DBNull
@@ -467,54 +517,30 @@ data DBVal = DBInt Int     | DBText String
 \end{SaveVerbatim}
 \useverb{dbvals}
 
-\noindent
-We also make use of the \texttt{ResultSet} type, which is a list of returned
-database rows.
-
-\begin{SaveVerbatim}{resultset}
-
-ResultSet : Type
-ResultSet = List (List DBVal)
-
-\end{SaveVerbatim}
-\useverb{resultset}
-
-\noindent
-Using these, we may implement a function, \texttt{executeSelect}, which, given
-a query, a list of variables to bind and their associated indices within the
-query, and a function which is used to extract information out of each returned
-database row, returns either a \texttt{ResultSet} or an error.
-
-\begin{SaveVerbatim}{execsel}
-
-executeSelect : 
-  String -> String -> List (Int, DBVal) -> 
-  (Eff IO [SQLITE (SQLiteExecuting ValidRow)] (List DBVal)) -> 
-  Eff IO [SQLITE ()] (Either QueryError ResultSet)
- 
-\end{SaveVerbatim}
-\useverb{execsel}
 
 % =================================================
 \subsection{A Simple Session Handler}
-More complex web applications require some persistent state across separate
-requests. This is often done through an abstraction of a \textit{session},
-wherein a cookie is set on the remote host containing a unique session ID,
-which is in turn used to retrieve data. In this section, we describe the
-implementation of a simple session handler, and the resource usage protocol
+Larger web applications require persistent state across separate
+requests. This can be achieved using a \textit{session},
+in which a cookie is set on the remote host containing a unique session ID,
+which is used to retrieve data. In this section, we describe
+a simple session handler, and the resource protocol
 involved. 
 
-A major strength of the \texttt{Effects} library is that it allows for simple
-composition of individual, fine-grained effects. By combining the individual
-CGI and SQLite components, we may construct a simple session handler to provide
-a notion of state across separate web requests. 
+The \texttt{Effects} library allows for composition of individual, fine-grained
+effects. By combining the \texttt{CGI} and \texttt{SQLite} components, we can
+construct a simple session handler to provide a notion of state across separate
+web requests. 
+We implement this with a SQLite database containing tables for storing
+session keys and expiry dates, along with the data associated with
+the session.
 
-We implement this by having a SQLite database, containing two tables:
-\texttt{session}, which stores session keys and their associated expiry dates,
-and \texttt{sessiondata}, which contains the data associated with each session.
-A datum associated with the session is described as a tagged union containing
-one of the primitive types \texttt{String}, \texttt{Bool} or \texttt{Int},
-which is serialised alongside a type tag for storage in the database.
+%We implement this with a SQLite database, containing two tables:
+%\texttt{session}, which stores session keys and their associated expiry dates,
+%and \texttt{sessiondata}, which contains the data associated with each session.
+%A datum associated with the session is described as a tagged union containing
+%one of the primitive types \texttt{String}, \texttt{Bool} or \texttt{Int},
+%which is serialised alongside a type tag for storage in the database.
 %TODO: Fix up the labels
 
 \begin{SaveVerbatim}{sessioneff}
@@ -566,13 +592,13 @@ data Session : Effect where
 
 Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated
 with the session handler, and Figure \ref{fig:sessioneffect} the corresponding
-algebraic effect. In this application, there exist two states:
+algebraic effect. In this application, there are two states:
 In \texttt{SessionClosed}, the user may load or create a
 session.
 In \texttt{SessionOpen}, the user may update the
 representation of the session in memory, serialise the session and write it to
-the database, or delete the session and invalidate the user's session key. The
-introduction of these two states ensures that changes are explicitly either
+the database, or delete the session and invalidate the user's session key. 
+These two states ensure that changes are explicitly either
 written or discarded, eliminating the possibility of a developer updating the
 session but neglecting to commit it to persistent storage. This, of course, is
 under the assumption that the process exits cleanly: we attempt to facilitate
@@ -599,11 +625,10 @@ data SessionRes : SessionStep -> Type where
 
 \useverb{sres}
 
-
-The \texttt{SessionRes} data type is parameterised over the current state,
-which determines which operations may be performed, and has two constructors:
-\texttt{InvalidSession} and \texttt{ValidSession}. If an operation such as
-creating a new session fails, no further side-effecting calls will be made, in
-turn preserving integrity. 
+%The \texttt{SessionRes} data type is parameterised over the current state,
+%which determines which operations may be performed, and has two constructors:
+%\texttt{InvalidSession} and \texttt{ValidSession}. If an operation such as
+%creating a new session fails, no further side-effecting calls will be made, in
+%turn preserving integrity. 
 
 % =================================================

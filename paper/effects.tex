@@ -73,14 +73,13 @@ data State : Effect where
 \noindent
 That is, \texttt{Get} returns a value of type \texttt{a} without updating
 the resource type. \texttt{Put} returns nothing, but has the effect of updating
-the resource. In order to make an effect usable, we implement a handler
+the resource. To make an effect usable, we implement a handler
 for a computation context by making an instance of the following class:
 
 \begin{SaveVerbatim}{effhandler}
 
 class Handler (e : Effect) (m : Type -> Type) where
-     handle : res -> 
-              (eff : e res res' t) -> 
+     handle : res -> (eff : e res res' t) -> 
               (k: res' -> t -> m a) -> m a
 
 \end{SaveVerbatim}
@@ -92,8 +91,8 @@ update that resource and execute a side-effect, and a continuation \texttt{k}
 which takes the updated resource and the return value of the effect. We use
 a continuation here primarily because there is no restriction on the number of
 times a handler may invoke the continuation (raising an exception, for example,
-will not call the continuation). Reading and updating states in handled
-for all computation contexts \texttt{m} as follows:
+will not invoke it). Reading and updating states is handled
+for all computation contexts \texttt{m}:
 
 \begin{SaveVerbatim}{statehandler}
 
@@ -102,6 +101,7 @@ instance Handler State m where
      handle st (Put n) k = k n ()
 
 \end{SaveVerbatim}
+\useverb{statehandler}
 
 \noindent
 Finally, we promote \texttt{State} into a concrete effect \texttt{STATE}, and
@@ -122,6 +122,7 @@ put val = Put val
 \end{SaveVerbatim}
 \useverb{stateconc}
 
+\noindent
 A concrete effect is simply an algebraic effect type paired with its current
 resource type. This, and other
 technical details, are explained in full elsewhere~\cite{brady:effects}.
@@ -130,6 +131,25 @@ handle new algebraic effects.
 
 \subsection{Resource Protocols as Effects}
 
+\begin{SaveVerbatim}{fileeff}
+{-                                             { Input resource type }   { Output resource type } { Value } -}
+ 
+data FileIO : Effect where
+     Open      : String -> (m : Mode) -> FileIO     ()                    (Either () (OpenFile m)) ()
+     Close     :                         FileIO     (OpenFile m)          ()                       ()
+
+     ReadLine  :                         FileIO     (OpenFile Read)       (OpenFile Read)          String
+     WriteLine : String ->               FileIO     (OpenFile Write)      (OpenFile Write)         ()
+     EOF       :                         FileIO     (OpenFile Read)       (OpenFile Read)          Bool
+\end{SaveVerbatim}
+
+\begin{figure*}[t]
+\begin{center}
+\useverb{fileeff}
+\end{center}
+\caption{File Protocol Effect}
+\label{fig:fileeffect}
+\end{figure*}
 More generally, a program might modify the set of effects available.
 This might be desirable for several reasons, such as adding a new
 effect, or to update an index of a dependently typed state. In this
@@ -151,34 +171,18 @@ In fact, \texttt{Eff}
 is defined in terms of \texttt{EffM}, with equal input/output effects.
 We can use this to describe how effects follow resource protocols. A simple
 example is a file access protocol, where a file must be opened before it
-is read or written, and a file must be closed on exit:
+is read or written, and a file must be closed on exit. 
 
-\begin{SaveVerbatim}{fileeff}
-
-data FileIO : Effect where
-     Open  : String -> (m : Mode) -> 
-             FileIO () (OpenFile m) ()
-     Close : FileIO (OpenFile m) () ()
-
-     ReadLine  : FileIO (OpenFile Read)  
-                        (OpenFile Read) String
-     WriteLine : String -> 
-                 FileIO (OpenFile Write) 
-                        (OpenFile Write) ()
-     EOF       : FileIO (OpenFile Read)  
-                        (OpenFile Read) Bool
-
-\end{SaveVerbatim}
-\useverb{fileeff}
-
-\noindent
+Figure \ref{fig:fileeffect} shows how the protocol is encoded as an
+effect.
 Note that the types of the input and output resources describes how resource
-state changes in each operation: opening a file changes an empty resource to
-a resource containing an open file; reading a line is only possible if the
+state changes in each operation: opening a file may fail, so
+changes an empty resource to
+a resource containing either a unit or an open file; 
+reading a line is only possible if the
 resoource is a file open for reading, etc.
 The handler for this effect for an \texttt{IO} computation context will
-execute the required primitive I/O actions, as well as throwing an exception
-if any operation fails.
+execute the required primitive I/O actions.
 
 The following program type checks, and therefore implicitly carries 
 a proof that the file resource protocol is followed correctly:
@@ -186,11 +190,11 @@ a proof that the file resource protocol is followed correctly:
 \begin{SaveVerbatim}{testfile}
 
 testFile : Eff IO [FILE_IO (), STDIO] () 
-testFile = catch (do open "testFile" Read
-                     str <- readLine
-                     close
-                     putStrLn str)
-            (\err => putStrLn ("Error: " ++ show err))
+testFile = do open "testFile" Read
+              if_valid then do str <- readLine
+                            close
+                            putStrLn str
+                       else putStrLn "Error"
 
 \end{SaveVerbatim}
 \useverb{testfile}
@@ -199,8 +203,13 @@ testFile = catch (do open "testFile" Read
 The type of \texttt{testFile} states
 that File I/O and console I/O are available effects, and in particular that
 the resource associated with the File I/O will be in the same state on entry
-and exit.
-Therefore, attempting to write to the file, or failing to open or close the
+and exit. We use \texttt{if\_valid} to handle possible failure---this is
+a function provided by the \texttt{Effects} library which checks whether
+a resource of type \texttt{Either a b} indicates failure (\texttt{Left a})
+or success (\texttt{Right b}) and branches and updates the resource
+accordingly.
+Therefore, attempting to write to the file, failing to check for
+success, or failing to open or close the
 file, would cause a \emph{compile-time} error. 
 
 We will use this technique extensively
