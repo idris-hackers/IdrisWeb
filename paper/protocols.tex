@@ -113,7 +113,7 @@ variables, are omitted in the interest of brevity.
 User code executes in the \texttt{TaskRunning} state. Several operations, such
 as querying the \texttt{POST} and \texttt{GET} variables, are available in this state, alongside
 functions to output data to the web page and append data to the response
-headers. It is important to note, that at this stage nothing is written to the
+headers. It is important to note that at this stage nothing is written to the
 page, with the \texttt{output} and \texttt{addHeader} functions instead
 modifying the \texttt{CGIInfo} record. This data may then be printed at the end of the
 program's execution, in accordance with the resource usage protocol.
@@ -184,7 +184,7 @@ data Sqlite : Effect where
   PrepareStatement  : QueryString -> 
                       Sqlite (SQLiteConnected)          (Either (SQLitePSFail) 
                                                           (SQLitePSSuccess Binding))         (Either SQLiteCode ())
-  BindInt           : ArgPos -> Int -> 
+  BindInt           : ArgPos -> Int -> 
                       Sqlite (SQLitePSSuccess Binding)  (SQLitePSSuccess Binding)            ()
   FinishBind        : Sqlite (SQLitePSSuccess Binding)  (Either SQLiteFinishBindFail
                                                           (SQLitePSSuccess Bound))           (Maybe BindError)
@@ -404,7 +404,7 @@ String -> Eff IO [SQLITE ()]
 
 \noindent
 The program will be run in \texttt{IO}, and starts and finishes with no active
-resources.  It reutnrs either list of \texttt{(String, String)} pairs,
+resources.  It returns either a list of \texttt{(String, String)} pairs,
 representing names and addresses in the database, or an error.
 %This example is shown in Figure
 %\ref{fig:testsel}.
@@ -446,10 +446,7 @@ testSelect dept = do
 The program initially attempts to open a connection to the \texttt{people.db}
 database. At this point, since the \texttt{OpenDB} operation has been invoked,
 the program transitions to the \texttt{ConnectionOpened} state. The
-\texttt{openDB} function returns a \texttt{Bool} indicating whether the
-operation is successful. If not, the \texttt{connFail} function
-generates an appropriate error and disposes of the resources, as shown in
-Figure~\ref{fig:sqlitestates}.
+\texttt{openDB} function returns either an error code, if the connection fails, or a unit type should the connection succeed, as shown in Figure \ref{fig:sqlitestates}.
 
 A call to \texttt{prepareStatement} attempts to create a prepared statement,
 and a subsequent call to \texttt{beginExecution} allows data to be retrieved

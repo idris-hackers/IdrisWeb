@@ -120,14 +120,7 @@ application to
 produce an internal server error due to content being written to the remote
 host prior to headers. With regard to database access, we may statically
 guarantee that library calls are made in the correct order, and calls to
-retrieve rows of data are made only when more data is available. Additionally,
-by recording any failures in the resource associated with the database effect,
-we may ensure that any failures at certain stages in the process may be
-correctly dealt with, and not propagate to further library calls---if a
-prepared statement fails to compile, for example, the framework guarantees that
-it will not be executed, without causing a fatal runtime error or memory access
-violation.
-%
+retrieve rows of data are made only when more data is available. Additionally, by encoding desired invariants within operation types, we may gain static guarantees about adherence to resource usage protocols and failure handling.
 Enforcing resource usage protocols also guards against common programmer
 errors, saving debugging time by identifying errors at compile time.
 
