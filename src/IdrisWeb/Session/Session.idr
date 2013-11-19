@@ -173,7 +173,7 @@ storeSessionData s_id [] = Effects.pure $ Right ()
 storeSessionData s_id (sr :: srs) = do res <- storeSessionRow s_id sr
                                        case res of
                                             Left err => Effects.pure $ Left err
-                                            Right () => storeSessionRow s_id srs
+                                            Right () => storeSessionData s_id srs
 
 removeSession: SessionID -> Eff IO [SQLITE ()] (Either QueryError ())
 removeSession s_id = do
