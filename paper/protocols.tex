@@ -455,7 +455,7 @@ from the database.
 \texttt{CollectResults} operates on the row currently held in the buffer.
 Firstly, the function checks
 that there is a valid row in the buffer, and if so uses the
-\texttt{getColumnText} and \texttt{getColumnInt} functions to retrieve the data
+\texttt{getColumnText} function to retrieve the data
 from the database. This function is then called recursively until there are no
 more rows to process.
 
@@ -465,16 +465,16 @@ collectResults :
   EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) 
                           (SQLiteExecuting ValidRow))] 
           [SQLITE (SQLiteExecuting InvalidRow)] 
-          (List (String, Int))
+          (List (String, String))
 \end{SaveVerbatim}
 
 \begin{SaveVerbatim}{collectres}
 collectResults = 
   if_valid then do name <- getColumnText 1
-                   age <- getColumnInt 2
+                   addr <- getColumnText 2
                    step_res <- nextRow
                    xs <- collectResults
-                   return $ (name, age) :: xs
+                   return $ (name, addr) :: xs
   else return []
 
 \end{SaveVerbatim}

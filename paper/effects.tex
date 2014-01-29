@@ -24,7 +24,7 @@ Eff : (m : Type -> Type) ->
 \texttt{Eff} is parameterised over a \emph{computation context}, \texttt{m}, 
 which describes the context in which the effectful program will be run, a
 list of side effects \texttt{es} that the program is permitted to use, and the
-programs return type \texttt{a}. The name \texttt{m} for the computation context is
+program's return type \texttt{a}. The name \texttt{m} for the computation context is
 suggestive of a monad, but there is no requirement for it to be so.
 
 For example, the following type carries an integer state,
@@ -43,7 +43,7 @@ addState = do val <- get
 
 \subsection{Implementing Effects}
 
-Effects such as state and exception are described as algebraic data types,
+Effects such as `State' and `Exception' are described as algebraic data types,
 and run by giving \emph{handlers} for specific computation contexts. 
 Effects have a corresponding \emph{resource} (in the case of state, the
 resource is simply the current state). Executing an effectful operation may
@@ -180,7 +180,7 @@ state changes in each operation: opening a file may fail, so
 changes an empty resource to
 a resource containing either a unit or an open file; 
 reading a line is only possible if the
-resoource is a file open for reading, etc.
+resource is a file open for reading, etc.
 The handler for this effect for an \texttt{IO} computation context will
 execute the required primitive I/O actions.
 
@@ -206,15 +206,17 @@ the resource associated with the File I/O will be in the same state on entry
 and exit. We use \texttt{if\_valid} to handle possible failure---this is
 a function provided by the \texttt{Effects} library which checks whether
 a resource of type \texttt{Either a b} indicates failure (\texttt{Left a})
-or success (\texttt{Right b}) and branches and updates the resource
-accordingly.
-Therefore, attempting to write to the file, failing to check for
+or success (\texttt{Right b}). In this case, the initial resource in the valid
+branch is \texttt{OpenFile Read}, indicating that the file has been successfully 
+opened for reading, whereas in the failing branch, the resource remains as \texttt{()}.
+
+Attempting to write to the file, failing to check for
 success, or failing to open or close the
 file, would cause a \emph{compile-time} error. 
 
 We will use this technique extensively
 throughout this paper: describe a resource usage protocol in terms of
-state transitions; implement an effect which captures that protocol; implement
+state transitions; implement an effect which captures that protocol; and implement
 programs which, by using this effect, implicitly carry a proof that the resource
 protocol has been correctly followed.
 

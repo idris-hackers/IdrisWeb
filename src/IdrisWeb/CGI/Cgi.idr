@@ -239,7 +239,7 @@ getHandler vars handler_name handler_type handlers cgi = do
 
 inspectFinalEnv : (effs : List EFFECT) -> Env IO effs -> (InitialisedCGI TaskRunning) -> (InitialisedCGI TaskRunning)
 inspectFinalEnv _ [] def = def
-inspectFinalEnv ((InitialisedCGI TaskRunning) :: effs) ((ICgi st) :: vals) def = (ICgi st)
+inspectFinalEnv ((CGI (InitialisedCGI TaskRunning)) :: effs) ((ICgi st) :: vals) def = (ICgi st)
 inspectFinalEnv (_ :: effs) (_ :: vals) def = inspectFinalEnv effs vals def
 
 --Eff IO 

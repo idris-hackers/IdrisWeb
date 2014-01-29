@@ -81,16 +81,16 @@
 
 \begin{abstract}
 Dependently-typed languages allow precise types to be used during development,
-facilitating reasoning about programs. However,
+facilitating static reasoning about program behaviour. However,
 stronger types bring a disadvantage that it becomes increasingly difficult to
-write programs that are accepted by a type checker and additional proofs may
-have to be specified by a programmer.
+write programs that are accepted by a type checker, meaning additional proofs may
+have to be specified by a developer.
 
 Embedded domain-specific languages (EDSLs) can help address this problem by
 introducing a layer of abstraction over more precise underlying types,
 allowing domain-specific code to be written in a high-level language which uses
 dependent types to enforce invariants without imposing additional proof
-obligations on an application programmer. 
+obligations on an application developer. 
 
 In this paper, we apply this technique to web programming.  Using the
 dependently typed programming language \Idris{}, we introduce an EDSL to
@@ -108,7 +108,8 @@ operations such as CGI, database access and session handling.
 %\terms
 %term1, term2
 
-%\keywords
+\keywords
+Dependent types, web applications, security, verification
 %keyword1, keyword2
 
 \input{introduction}
@@ -127,7 +128,8 @@ operations such as CGI, database access and session handling.
 %-----------------------------
 
 \acks
-This work has been supported by the Scottish Informatics and Computer Science Alliance (SICSA) and the EPSRC. The authors would like to thank contributors to the \idris{} language, especially the authors of the original \texttt{Network.Cgi} and \texttt{SQLite} libraries.
+This work has been supported by the Scottish Informatics and Computer Science Alliance (SICSA) and the EPSRC. We would like to thank the contributors to the \idris{} language, especially the authors of the original \texttt{Network.Cgi} and \texttt{SQLite} libraries.
+We are very grateful to Peter Thiemann and the anonymous reviewers for their insightful and constructive comments.
 % SICSA / EPSRC (grant number?
 % #idris
 % Idris contributors, in particular Melissa for the SQLite bindings and whoever wrote Network.Cgi
