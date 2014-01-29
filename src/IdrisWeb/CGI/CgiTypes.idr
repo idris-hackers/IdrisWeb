@@ -154,8 +154,11 @@ formboolNotFormList refl impossible
 formfloatNotFormList : FormFloat = (FormList a) -> _|_
 formfloatNotFormList refl impossible
 
+lemma_fl_injective : {a : FormTy} -> {b : FormTy} -> (FormList a = FormList b) -> a = b
+lemma_fl_injective refl = refl
+
 lemma_a_not_b : {a : FormTy} -> {b : FormTy} -> ((a = b) -> _|_) -> ((FormList a = FormList b) -> _|_) 
-lemma_a_not_b refl impossible
+lemma_a_not_b p h = p (lemma_fl_injective h)
 
 instance DecEq FormTy where
   decEq FormString FormString = Yes refl
