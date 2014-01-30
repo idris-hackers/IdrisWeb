@@ -43,11 +43,8 @@ output to communicate with the remote client. Importantly, HTTP headers must be
 correctly written to the browser prior to any other output; failure to do so
 will result in an internal server error being shown.
 
-%A previous implementation of CGI in \idris{} implemented CGI an extension of monadic IO, as in Haskell. Whilst basic functionality worked correctly, this approach had several disadvantages; most notably, it was possible to perform arbitrary IO at any point in the program. If this were to happen, then the program would fail due to the fact that headers had not been written to the client.
-
 By modelling CGI as a resource-dependent algebraic effect, we may enforce a
 resource usage protocol which
-%even though the program may be running in an IO execution context, 
 prevents arbitrary IO from being performed and therefore
 ensures that the headers are written correctly. We
 define an effect, \texttt{Cgi}, and an associated resource,
@@ -158,6 +155,8 @@ main = runCGI [initCGIState] sayHello
 \end{SaveVerbatim}
 \useverb{hworldcgi}
 % =================================================
+
+Here, \texttt{output} is a function which appends some output to the CGI output buffer, which is later written to the page.
 
 \subsection{Database access with SQLite}
 
