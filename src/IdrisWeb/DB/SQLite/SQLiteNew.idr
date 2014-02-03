@@ -433,13 +433,13 @@ executeInsert db_name query bind_vals = do
       bind_res <- multiBind bind_vals
       if_valid then do
         er_1 <- executeStatement
-        if_valid then do
-          finaliseValid
-          getRowCount
-        else do
-          finaliseInvalid
-          closeDB
-          return $ Left (ExecError "Insert failed")
+        finalise
+        case er_1 of
+          StepFail => do closeDB
+                         return $ Left (ExecError "Error inserting")
+          Unstarted => do closeDB
+                          return $ Left (ExecError "Internal error: 'Unstarted' after execution")
+          _ => getRowCount
       else do
         let be = getBindError bind_res
         cleanupBindFail

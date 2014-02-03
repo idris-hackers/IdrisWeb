@@ -337,10 +337,9 @@ authUser username password = do
 setSession : UserID -> Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised), SQLITE ()] Bool
 setSession user_id = do
   create_res <- createSession [(USERID_VAR, SInt user_id)]
-  sess_res <- lift' setSessionCookie
-  db_res <- lift' writeSessionToDB
-
-  pure (sess_res && db_res)
+  sess_res <- setSessionCookie
+  db_res <- writeSessionToDB
+  return (sess_res && db_res)
 
 
 handleLoginForm (Just name) (Just pwd) = do
@@ -350,16 +349,16 @@ handleLoginForm (Just name) (Just pwd) = do
       set_sess_res <- setSession uid
       if set_sess_res then do
         output $ "Welcome, " ++ name
-        pure ()
+        return ()
       else do
         output "Could not set session"
-        pure ()
+        return ()
     Right Nothing => do
       output "Invalid username or password"
-      pure ()
+      return ()
     Left err => do
       output $ "Error: " ++ (show err)
-      pure ()
+      return ()
 
 
 loginForm : UserForm
