@@ -50,8 +50,12 @@ Formlets \cite{cooper:formlets} are a well-known functional abstraction over web
 Our approach differs in that we check that handler functions conform to the types of the elements in the forms by parameterising the resource associated with the form construction effect, as opposed to using a preprocessor to rewrite the form elements in applicative notation.
 Our framework does not yet support composition of sections of forms, as is the case with formlets, but we foresee no problems with extending our DSL to add this functionality.
 
-Ensuring conformance to resource usage protocols has been attempted using the notion of \emph{typestate} in object-oriented languages \cite{deline:typestates}. Our approach differs in that we make no changes to the type system in order to implement this functionality: we check resource usage protocol conformance purely within \idris{}.
-Additionally, our handler-based approach facilitates greater control over side effects.
+Ensuring conformance to resource usage protocols has been attempted using the
+notion of \emph{typestate} in object-oriented languages
+\cite{deline:typestates}. Our approach differs in that we make no changes to
+the type system in order to implement this functionality; we check resource
+usage protocol conformance directly within \idris{}.  Additionally, our
+handler-based approach gives greater control over side effects.
 
 Java is often used as a language to write enterprise-level web applications. Frameworks such as the Java Persistence API (JPA) \cite{jpa} use Java annotations to translate data models into the appropriate database schemata, but such code may soon become unwieldy due to the large amount of redundant boilerplate code such as accessor and mutator functions. WebDSL \cite{webdsl} is a domain-specific language written primarily to
 introduce new abstractions which aim to reduce the amount of boilerplate code
