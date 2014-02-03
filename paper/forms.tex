@@ -93,7 +93,7 @@ cgiHello = do
     handleForm handlers
     return ()
   else do
-    addForm "nameform" "helloform" showHelloForm
+    addForm showHelloForm
     return ()
 
 main : IO ()
@@ -114,7 +114,7 @@ user-specified handler function.
 
 \subsection{Form Construction}
 \label{formcons}
-Each form element is specified  to hold a particular type of data, which, assuming that the correct type of data is specified by the user, is passed directly to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
+Each form element is specified to hold a particular type of data, which, assuming that the correct type of data is specified by the user, is passed directly to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
 
 \begin{SaveVerbatim}{formty}
 
@@ -179,30 +179,15 @@ type to handle the data supplied by the form: using an
 incompatible handler will result in a compile-time type error. The \texttt{Form}
 effect and associated resource \texttt{FormRes} is given in Figure 
 \ref{fig:formeffect}.
-The \texttt{using} notation here indicates that within
-the block, where \texttt{G} and \texttt{E} occur they are implicit arguments with
-the given type.
+
+The \texttt{using} notation indicates that where \texttt{G} and \texttt{E} occur within the block, they correspond to \emph{implicit arguments} within the type of the form construction resource. 
+\texttt{G} is of type \texttt{List FormTy}, indicating the types of the elements within the form, and \texttt{E} is of type \texttt{List WebEffect}. This allows us to record the types of form elements, which we may later use to ensure that the type of the handler function corresponds to the types of the elements within the form.
+%The \texttt{using} notation here indicates that within
+%the block, where \texttt{G} and \texttt{E} occur they are implicit arguments with
+%the given resource type.
 
 The general process of form construction is illustrated by the \texttt{AddTextBox}
-and \texttt{Submit} operations of the \texttt{Form} effect:
-
-\begin{SaveVerbatim}{formeffsmall}
-
-data Form : Effect where
-  AddTextBox : (label : String) -> (fty : FormTy) -> 
-               Maybe (interpFormTy fty) -> 
-               Form (FormRes G E) 
-                    (FormRes (fty :: G) E) () 
-     ...
-  Submit : (mkHandlerFn ((reverse G), E)) -> String -> 
-           Form (FormRes G E) (FormRes [] []) String
-
-\end{SaveVerbatim}
-\useverb{formeffsmall}
-
-\noindent
-These use the resource associated with the effect, \texttt{FormRes}, to
-construct the form. Adding a field such as a text box adds a new type,
+and \texttt{Submit} operations of the \texttt{Form} effect, shown in Figure ~\ref{fig:formeffect}. These use the resource associated with the effect, \texttt{FormRes}, to construct the form. Adding a field such as a text box adds a new type,
 \texttt{fty} to the list of field types, carried in the resource. When the form
 is complete, the \texttt{Submit} operation adds a submit button and returns the
 HTML text for the form, flushing the list of field types, and using it to
@@ -215,7 +200,6 @@ To specify a form instance, we define a function of type \texttt{UserForm}:
 UserForm : Type
 UserForm = EffM m [FORM (FormRes []) 
                         (FormRes [])] String
-
 \end{SaveVerbatim}
 \useverb{userform}
 
@@ -229,14 +213,6 @@ adds to the list of types, and only adding a submit button empties that list.
 Note that there is no need to restrict this effect to running in the \texttt{IO}
 monad since creating a form merely returns HTML text, with no side-effects by
 default.
-
-Handlers may only be associated with a form if they have argument types
-corresponding to the types associated with the form elements. Additionally, we
-wish to name the function in order for it to be serialised, whilst requiring a
-proof that the specified name is associated with the function. If this were not
-required, it would be possible to use a function satisfying the type
-requirement, without guaranteeing that the serialised data corresponded to
-that function.
 
 Before associating a handler function with the form, we must specify the
 effects available to the handler. This is done with
@@ -260,18 +236,24 @@ A \texttt{WebEffect} is an effect which is usable in a web application, and can
 be converted to an \texttt{EFFECT} using:
 
 \begin{SaveVerbatim}{interpwebeff}
-
 webEffect : WebEffect -> EFFECT
-
 \end{SaveVerbatim}
 \useverb{interpwebeff}
 
-Whilst it is not possible to serialise arbitrary effects due to the associated
+While it is not possible to serialise arbitrary effects due to the associated
 difficulties with serialising initial resource environments, we allow for three
 effects to be serialised: \texttt{CGI}, \texttt{SQLITE} and \texttt{SESSION}.
 This is, however, not an inherent limitation as the \texttt{Effects} library
 permits introduction of additional effects within an effectful computation.
-%
+
+Handlers may only be associated with a form if they have argument types
+corresponding to the types associated with the form elements. Additionally, we
+wish to name the function in order for it to be serialised, whilst requiring a
+proof that the specified name is associated with the function. If this were not
+required, it would be possible to use a function satisfying the type
+requirement, without guaranteeing that the serialised data corresponded to
+that function.
+
 We may specify a handler function of type \texttt{FormHandler}:
 
 \begin{SaveVerbatim}{formhandler}
@@ -283,7 +265,7 @@ FormHandler effs = Eff IO effs ()
 \useverb{formhandler}
 
 \noindent
-In order to associate a handler with a form, we may call the \texttt{addSubmit}
+In order to associate a handler with a form, we call the \texttt{addSubmit}
 function:
 
 \begin{SaveVerbatim}{addsubmit}
@@ -305,14 +287,14 @@ addSubmit f handlers {prf} = (Submit f name)
 
 \noindent
 This function takes a handler function and a list of available handlers, along with
-an automatically constructed proof (using the a \texttt{default} argument) that the
+an automatically constructed proof (using the \texttt{default} argument) that the
 handler is available.
 Let us look at each aspect of this function in turn. Firstly, the
 \texttt{mkHandlerFn} function calculates the required type of the handler
 function from the list of types associated with the form elements, and the
 effects we specified with \texttt{useEffects}. Note that since we prepend types
 to the list of \texttt{FormTy}s as opposed to appending them, we must reverse
-the list.
+the list of form elements \texttt{G}.
 
 \begin{SaveVerbatim}{mkhandlerfnty}
 
@@ -422,17 +404,16 @@ using (xs : HanderList , f : mkHandler (reverse G, E))
        FnHere  : FnElem f (((reverse G, E) ** 
                                   (f, fStr)) :: xs)
        FnThere : FnElem f xs -> FnElem f (x :: xs)
-
+       
 \end{SaveVerbatim}
 \useverb{fnelem}
 
 \noindent
-\texttt{FnElem} is parameterised over \texttt{G} and \text{E}, the types of the
+\texttt{FnElem} is parameterised over \texttt{G} and \texttt{E}, the types of the
 form elements and the effects used by the handler function. \texttt{FnHere}
 is a proof that the element is at the head of the current point of the list,
 whereas \texttt{FnThere} is a proof that the element is in the tail of 
 the list. 
-%TODO: this should probably be rewritten
 We then use an automatic proof search to
 generate the proof at compile time, should one exist. The proof
 may then be used in subsequent computations: we use it to retrieve

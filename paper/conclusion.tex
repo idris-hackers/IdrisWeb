@@ -133,14 +133,13 @@ from data, and an object-relational mapping system which will allow users to
 manipulate records which can then be automatically written to the database,
 instead of having to update tables manually via SQL queries.
 
-Type providers, as originally implemented in F\# \cite{msr:tp}, are an
-interesting method by which external data sources may be used to import
-external information, such that it may be used during compilation. 
+Type providers, as originally implemented in F\# \cite{msr:tp}, allow external data sources to be used to import
+external information to be used during compilation. 
 In this way, it becomes possible to use the extra type
 information to statically ensure the validity of artefacts such as SQL
 queries and data structures. If data structures within the program do not
 conform to a given database schema, for example, then the program will not
-type-check.  This has been implemented for 
+type-check.  Type providers have been implemented for 
 \idris{} 
 \cite{christiansen:dtp}, exploiting the fact that types can be
 calculated by functions to avoid unsafely generating extra code in the type provider

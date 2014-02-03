@@ -46,19 +46,18 @@ not, then the \texttt{handleNonFormRequest} function is called, which inspects
 the \texttt{GET} variables in order to display the correct page.
 
 \begin{SaveVerbatim}{handlereq}
-
-handleRequest : CGIProg 
-     [SESSION (SessionRes SessionUninitialised), 
-      SQLITE ()] ()
-handleRequest = do 
-  handler_set <- isHandlerSet
-  if handler_set then do
-    lift' (handleForm handlers)
-    Effects.return ()
-  else do
-    action <- lift' (queryGetVar "action")
-    thread_id <- lift' (queryGetVar "thread_id")
-    handleNonFormRequest action (map strToInt thread_id)
+ handleRequest : 
+   CGIProg [SESSION (SessionRes SessionUninitialised), 
+            SQLITE ()] ()
+ handleRequest = do 
+   handler_set <- isHandlerSet
+   if handler_set then do
+     handleForm handlers
+     return ()
+   else do
+     action <- queryGetVar "action"
+     thread_id <- queryGetVar "thread_id"
+     handleNonFormRequest action (map strToInt thread_id)
 
 \end{SaveVerbatim}
 \useverb{handlereq}
@@ -141,15 +140,15 @@ handleNewThread _ _ = do
 \label{fig:handlethread}
 \end{figure}
 
-\noindent
 Once we have loaded the session data from the database, we then check whether
 the \texttt{UserID} variable is set, which demonstrates that a user has
 successfully logged into the system, and allows us to use the ID in subsequent
 computations. The database operation to insert the thread into the database is
 performed by \texttt{threadInsert}, shown in Figure \ref{fig:threadins}.
+
 This uses a library function \texttt{executeInsert}, which abstracts over the
 low-level resource usage protocol, enabling for provably-correct database
-access without the excess boilerplate code. In addition, \texttt{executeInsert}
+access without the additional DSL code. In addition, \texttt{executeInsert}
 returns the unique row ID of the last item which was inserted, which may be
 used in subsequent computations. In the case of the message board, we use this
 to associate the first post of the thread with the thread being inserted.
@@ -221,7 +220,7 @@ traverseThreads (x::xs) = do traverseRow x
 
 \begin{figure}[h]
 \useverb{traversethreads}
-\caption{Thread Insertion}
+\caption{Listing Threads}
 \label{fig:traverse}
 \end{figure}
 
@@ -238,27 +237,27 @@ a new session or querying the database, are reported to the user.
 
 \begin{SaveVerbatim}{handlelogin}
 handleLoginForm (Just name) (Just pwd) = do
-  auth_res <- lift' (authUser name pwd)
+  auth_res <- (authUser name pwd)
   case auth_res of
     Right (Just uid) => do
       set_sess_res <- setSession uid
       if set_sess_res then do
-        lift' (output $ "Welcome, " ++ name)
+        output $ "Welcome, " ++ name
         return ()
       else do
-        lift' (output "Could not set session")
+         output "Could not set session"
          return ()
     Right Nothing => do
-      lift' (output "Invalid username or password")
+      output "Invalid username or password"
       return ()
     Left err => do
-      lift' (output $ "Error: " ++ err)
+      output $ "Error: " ++ err
       return ()
 \end{SaveVerbatim}
 
 \begin{figure}[h]
 \useverb{handlelogin}
-\caption{Thread Insertion}
+\caption{Authentication}
 \label{fig:handlelogin}
 \end{figure}
 
@@ -273,8 +272,7 @@ code that fails to compile should resources be incorrectly accessed.
 Additionally, we have used the form handling mechanism to simply handle the
 arguments passed by the user. Importantly, we have shown that dependent types
 can be used to increase confidence in an (albeit simplified) real-world
-application, without requiring developers to supply proofs or indeed work
-explicitly with dependent types. 
+application, without requiring developers to supply proofs.
 
 %-----------------------------
 %-----------------------------

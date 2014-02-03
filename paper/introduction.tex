@@ -2,7 +2,7 @@
 
 Web applications, whilst ubiquitous, are also prone to incorrect construction
 and security exploits such as SQL injection \cite{owasp:sqli} or cross-site
-scripting \cite{owasp:xss}. Security breaches using such exploits are
+scripting \cite{owasp:xss}. Security breaches are
 far-reaching, and high profile cases involve large corporations such as Sony,
 who suffered a well-publicised and extremely costly SQL Injection breach in
 2011 \cite{ieee:sony}, and \textit{Yahoo!}, who suffered a breach in 2012
@@ -16,6 +16,7 @@ programs with more expressive, static type systems, instead relying on
 extensive unit testing to ensure correctness and security. 
 
 %%------- EXAMPLE
+\noindent
 Let us consider a simple database access routine, written in
 PHP, where we wish to obtain the name and address of every employee working in
 a given department, \texttt{\$dept}. We firstly construct an object
@@ -98,7 +99,7 @@ Finally, the resources are freed.
 
 Problems may arise if the protocol is not followed correctly.
 A developer may, for example, accidentally close a statement whilst still
-retrieving rows, which would cause a runtime error. Similarly, a programmer may
+retrieving rows, which would cause a runtime error. Similarly, a developer may
 omit closing the statement or connection, which can lead to
 problems such as resource leaks in longer-running server applications.
 However, in conventional programming languages, there is no way to check
@@ -109,7 +110,7 @@ to specify a program's behaviour precisely, and to check that a
 specification is followed.
 %
 Unfortunately, automatic verification by a compiler can be difficult or
-often impossible, requiring additional proofs to be given by the programmer.
+often impossible, requiring additional proofs to be given by the developer.
 
 This complexity can be addressed through the use of \textit{embedded
 domain-specific languages} (EDSLs) to abstract away the complexity of the
