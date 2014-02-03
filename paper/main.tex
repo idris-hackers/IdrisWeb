@@ -69,7 +69,7 @@
                                   % (paid open-access papers, 
                                   % short abstracts)
 
-%\authorversion
+\authorversion
 
 \titlebanner{}        % These are ignored unless
 \preprintfooter{}   % 'preprint' option specified.
@@ -84,22 +84,16 @@
 \begin{abstract}
 Dependently-typed languages allow precise types to be used during development,
 facilitating static reasoning about program behaviour. However,
-stronger types bring a disadvantage that it becomes increasingly difficult to
-write programs that are accepted by a type checker, meaning additional proofs may
-have to be specified by a developer.
+with the use of more specific types comes the disadvantage that it becomes increasingly difficult to
+write programs that are accepted by a type checker, meaning additional proofs may have to be specified manually.
 
 Embedded domain-specific languages (EDSLs) can help address this problem by
 introducing a layer of abstraction over more precise underlying types,
-allowing domain-specific code to be written in a high-level language which uses
-dependent types to enforce invariants without imposing additional proof
+allowing domain-specific code to be written in a verified high-level language without imposing additional proof
 obligations on an application developer. 
 
 In this paper, we apply this technique to web programming.  Using the
-dependently typed programming language \Idris{}, we introduce an EDSL to
-facilitate the creation and handling of \emph{statically checked} web forms,
-reducing the scope for programmer error and attacks such as SQL injection. We
-also show how to enforce resource usage protocols associated with common web
-operations such as CGI, database access and session handling.  
+dependently typed programming language \Idris{}, we show how to use EDSLs to enforce resource usage protocols associated with common web operations such as CGI, database access and session handling. We also introduce an EDSL which uses dependent types to facilitate the creation and handling of web forms, reducing the scope for programmer error and possible security implications.
 
 \end{abstract}
 
@@ -111,7 +105,7 @@ operations such as CGI, database access and session handling.
 %term1, term2
 
 \keywords
-Dependent Types, Web Applications, Security, Verification
+Dependent Types, Web Applications, Verification
 %keyword1, keyword2
 
 \input{introduction}
@@ -131,7 +125,7 @@ Dependent Types, Web Applications, Security, Verification
 
 \acks
 This work has been supported by the Scottish Informatics and Computer Science Alliance (SICSA) and the EPSRC. We would like to thank the contributors to the \idris{} language, especially the authors of the original \texttt{Network.Cgi} and \texttt{SQLite} libraries.
-We are very grateful to Peter Thiemann and the anonymous reviewers for their insightful and constructive comments.
+We are very grateful to Peter Thiemann and the anonymous reviewers for their insightful and constructive comments and suggestions.
 % SICSA / EPSRC (grant number?
 % #idris
 % Idris contributors, in particular Melissa for the SQLite bindings and whoever wrote Network.Cgi

@@ -37,11 +37,11 @@ handling them in \texttt{IO} or as monad transformers.
 \label{fig:cgistates}
 \end{figure}
 
-CGI is used to invoke an application on a web server, making use of environment
+The Common Gateway Interface (CGI) is used to invoke an application on a web server, making use of environment
 variables to convey information gained from an HTTP request and using standard
 output to communicate with the remote client. Importantly, HTTP headers must be
 correctly written to the browser prior to any other output; failure to do so
-will result in an internal server error being shown.
+will result in an HTTP Error 500.
 
 By modelling CGI as a resource-dependent algebraic effect, we may enforce a
 resource usage protocol which
@@ -136,7 +136,7 @@ CGIProg effs a =
 
 \noindent
 This is then passed, along with initial values for other effects that the user
-may wish to use, to the runAction function, which invokes the RunAction
+may wish to use, to the \texttt{runAction} function, which invokes the \texttt{RunAction}
 operation and executes the user-specified action.
 %
 A simple ``Hello, world!'' program would be defined as follows:
@@ -332,7 +332,7 @@ GetColumnText : Column ->
 
 \noindent
 In order to provide the necessary static guarantee that there is a valid row to
-process in the buffer, we make use of the \texttt{if\_valid} construct. The
+process in the buffer, we make use of the \texttt{if\_valid} construct, as described in Section ~\ref{rp-effects}. The
 \texttt{nextRow} function will either fetch a row into the buffer, or indicate
 that a row could not be loaded, as shown by its type:
 
