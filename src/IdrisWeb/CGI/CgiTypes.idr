@@ -30,7 +30,8 @@ record CGIInfo : Type where
                 (Cookies : Vars) ->
                 (UserAgent : String) ->
                 (Headers : String) ->
-                (Output : String) -> CGIInfo
+                (Output : String) -> 
+                (FormNumber : Nat) -> CGIInfo
 
 -- Type of user-defined 
 public
@@ -389,8 +390,7 @@ data Cgi : Effect where
               Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) a
 
   -- Write a form to the web page
-  AddForm : String -> String -> 
-            UserForm -> 
+  AddForm : UserForm -> 
             Cgi (InitialisedCGI TaskRunning) (InitialisedCGI TaskRunning) ()
 
   -- Attempts to handle a form, given a list of available handlers

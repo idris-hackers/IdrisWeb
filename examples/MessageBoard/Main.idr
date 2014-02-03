@@ -87,15 +87,15 @@ postInsert uid thread_id content = do
         executeStatement
         finalise
         closeDB
-        Effects.pure True
+        return True
       else do
         cleanupBindFail
-        Effects.pure  False
+        return  False
     else do
       cleanupPSFail
-      Effects.pure False
+      return False
   else 
-    Effects.pure False
+    return False
 
 
 
@@ -113,13 +113,13 @@ addPostToDB thread_id content sd = do
                             -- TODO: redirection would be nice
                             outputWithPreamble "Post successful"
                             discardSession
-                            Effects.pure ()
+                            return ()
                           else do
                             outputWithPreamble "There was an error adding the post to the database."
                             discardSession
-                            Effects.pure ()
+                            return ()
     Nothing => do notLoggedIn
-                  Effects.pure ()
+                  return ()
                          
 
 
@@ -140,20 +140,22 @@ showNewPostForm : Int -> CGIProg [SESSION (SessionRes SessionUninitialised), SQL
 showNewPostForm thread_id = do
   output htmlPreamble 
   output "<h2>Create new post</h2>"
-  addForm "newPostForm" "messageboard" (newPostForm thread_id)
+  addForm (newPostForm thread_id)
   output htmlPostamble
 
 ----------- 
 -- Thread Creation
 -----------
 
-threadInsert : Int -> String -> String -> Eff IO [SQLITE ()] Bool
+threadInsert : Int -> String -> String -> Eff IO [SQLITE ()] (Maybe QueryError)
 threadInsert uid title content = do
   let query = "INSERT INTO `Threads` (`UserID`, `Title`) VALUES (?, ?)"
   insert_res <- executeInsert DB_NAME query [(1, DBInt uid), (2, DBText title)]
   case insert_res of
-    Left err => pure False
-    Right thread_id => postInsert uid thread_id content
+    Left err => return (Just err)
+    Right thread_id => do 
+      post_res <- postInsert uid thread_id content
+      if post_res then return Nothing else return $ Just (ExecError "post")
                           
 
 addNewThread : String -> String -> SessionData -> EffM IO [CGI (InitialisedCGI TaskRunning),
@@ -164,18 +166,19 @@ addNewThread : String -> String -> SessionData -> EffM IO [CGI (InitialisedCGI T
                                                        SQLITE ()] ()
 addNewThread title content sd = do 
   case lookup USERID_VAR sd of
-    Just (SInt uid) => do insert_res <- threadInsert uid title content
-                          if insert_res then do
-                            -- TODO: redirection would be nice
-                            output "Thread creation successful" 
-                            discardSession
-                            pure () 
-                          else do
-                            output "There was an error adding the thread to the database."
-                            discardSession
-                            pure ()
+    Just (SInt uid) => 
+      do insert_res <- threadInsert uid title content
+         case insert_res of
+           Just err => do
+             output $ "There was an error adding the thread to the database: " ++ show err
+             discardSession
+             return ()
+           Nothing => do
+             output "Thread added successfully"
+             discardSession
+             return ()
     Nothing => do notLoggedIn
-                  pure ()
+                  return ()
   
 -- Create a new thread, given the title and content
 handleNewThread (Just title) (Just content) = do withSession (addNewThread title content) notLoggedIn
@@ -194,7 +197,7 @@ newThreadForm = do
 showNewThreadForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showNewThreadForm = do output htmlPreamble
                        output "<h1>New Thread</h1>"
-                       addForm "newThreadForm" "messageboard" newThreadForm
+                       addForm newThreadForm
                        output htmlPostamble
 
 
@@ -214,11 +217,11 @@ userExists' =
   if_valid then do
     finaliseValid
     closeDB
-    Effects.pure True
+    return True
   else do
     finaliseInvalid
     closeDB
-    Effects.pure False
+    return False
 
 
 userExists : String -> Eff IO [SQLITE ()] (Either QueryError Bool)
@@ -233,16 +236,16 @@ userExists username = do
       if_valid then do
         executeStatement
         res <- userExists'  
-        Effects.pure $ Right res
+        return $ Right res
       else do
         let be = getBindError bind_res
         cleanupBindFail
-        Effects.pure $ Left be
+        return $ Left be
     else do
       cleanupPSFail
-      Effects.pure . Left $ getQueryError ps_res
+      return $ Left (getQueryError ps_res)
   else 
-    Effects.pure . Left $ getQueryError conn_res
+    return $ Left (getQueryError conn_res)
 
 
 handleRegisterForm (Just name) (Just pwd) = do 
@@ -274,7 +277,7 @@ registerForm = do
 showRegisterForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showRegisterForm = do output htmlPreamble
                       output "<h1>Create a new account</h1>"
-                      addForm "registerForm" "messageboard" registerForm
+                      addForm registerForm
                       output htmlPostamble
 
 ----------- 
@@ -301,11 +304,11 @@ authUser' =
     user_id <- getColumnInt 0
     finaliseValid
     closeDB
-    Effects.pure $ Right (Just user_id)
+    return $ Right (Just user_id)
   else do
     finaliseInvalid
     closeDB
-    Effects.pure $ Right Nothing
+    return $ Right Nothing
 
 authUser : String -> String -> Eff IO [SQLITE ()] (Either QueryError (Maybe UserID))
 authUser username password = do
@@ -323,17 +326,17 @@ authUser username password = do
       else do
         let be = getBindError bind_res
         cleanupBindFail
-        Effects.pure $ Left be
+        return $ Left be
     else do
       cleanupPSFail
-      Effects.pure . Left $ getQueryError ps_res
+      return $ Left (getQueryError ps_res)
   else 
-    Effects.pure . Left $ getQueryError conn_res
+    return $ Left (getQueryError conn_res)
 
 
 setSession : UserID -> Eff IO [CGI (InitialisedCGI TaskRunning), SESSION (SessionRes SessionUninitialised), SQLITE ()] Bool
 setSession user_id = do
-  create_res <- lift' (createSession [(USERID_VAR, SInt user_id)])
+  create_res <- createSession [(USERID_VAR, SInt user_id)]
   sess_res <- lift' setSessionCookie
   db_res <- lift' writeSessionToDB
 
@@ -341,21 +344,21 @@ setSession user_id = do
 
 
 handleLoginForm (Just name) (Just pwd) = do
-  auth_res <- lift' (authUser name pwd)
+  auth_res <- authUser name pwd
   case auth_res of
     Right (Just uid) => do
       set_sess_res <- setSession uid
       if set_sess_res then do
-        lift' (output $ "Welcome, " ++ name)
+        output $ "Welcome, " ++ name
         pure ()
       else do
-        lift' (output "Could not set session")
+        output "Could not set session"
         pure ()
     Right Nothing => do
-      lift' (output "Invalid username or password")
+      output "Invalid username or password"
       pure ()
     Left err => do
-      lift' (output $ "Error: " ++ (show err))
+      output $ "Error: " ++ (show err)
       pure ()
 
 
@@ -369,7 +372,7 @@ loginForm = do
 showLoginForm : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 showLoginForm = do output htmlPreamble
                    output "<h1>Log in</h1>"
-                   addForm "loginForm" "messageboard" loginForm
+                   addForm loginForm
                    output "</html>"
 
 
@@ -413,15 +416,15 @@ traversePosts (x :: xs) = do traverseRow x
 
 printPosts : ThreadID -> CGIProg [SQLITE ()] ()
 printPosts thread_id = do 
-  post_res <- lift' (getPosts thread_id)
+  post_res <- getPosts thread_id
   case post_res of
-    Left err => do lift' (output $ "Could not retrieve posts, error: " ++ (show err))
-                   Effects.pure ()
-    Right posts => do lift' (output "<table>")
+    Left err => do output $ "Could not retrieve posts, error: " ++ (show err)
+                   return ()
+    Right posts => do output "<table>"
                       traversePosts posts
-                      lift' (output "</table>")
-                      lift' (output $ "<a href=\"?action=newpost&thread_id=" ++ (show thread_id) ++ "\">New post</a><br />")
-                      Effects.pure ()
+                      output "</table>"
+                      output $ "<a href=\"?action=newpost&thread_id=" ++ (show thread_id) ++ "\">New post</a><br />"
+                      return ()
 
 traverseThreads : ResultSet -> Eff IO [CGI (InitialisedCGI TaskRunning)] ()
 traverseThreads [] = pure ()
@@ -437,17 +440,17 @@ printThreads : CGIProg [SQLITE ()] ()
 printThreads = do
   thread_res <- getThreads
   case thread_res of
-    Left err => do lift' (output $ "Could not retrieve threads, error: " ++ (show err))
-                   Effects.pure ()
-    Right threads => do lift' (output htmlPreamble)
-                        lift' (output "<table><tr><th>Title</th><th>Author</th></tr>")
+    Left err => do output $ "Could not retrieve threads, error: " ++ (show err)
+                   return ()
+    Right threads => do output htmlPreamble
+                        output "<table><tr><th>Title</th><th>Author</th></tr>"
                         traverseThreads threads
-                        lift' (output "</table><br />")
+                        output "</table><br />"
                         output "<a href=\"?action=newthread\">Create a new thread</a><br />"
                         output "<a href=\"?action=register\">Register</a><br />"
                         output "<a href=\"?action=login\">Log In</a><br />"
                         output htmlPostamble
-                        Effects.pure ()
+                        return ()
 ----------- 
 -- Request handling
 -----------
@@ -468,11 +471,11 @@ strToInt s = cast s
 handleRequest : CGIProg [SESSION (SessionRes SessionUninitialised), SQLITE ()] ()
 handleRequest = do handler_set <- isHandlerSet
                    if handler_set then do
-                     lift' (handleForm handlers)
-                     Effects.pure ()
+                     handleForm handlers
+                     return ()
                    else do
-                     action <- lift' (queryGetVar "action")
-                     thread_id <- lift' (queryGetVar "thread_id")
+                     action <- queryGetVar "action"
+                     thread_id <- queryGetVar "thread_id"
                      handleNonFormRequest action (map strToInt thread_id)
 
 main : IO ()

@@ -21,7 +21,7 @@ syntax "handler args=" [args] ", effects=" [effs] ", fn=" [fn] ", name=" [name] 
 -- Bit of a hack for now, until I can get it so that the user doesn't
 -- have to type this
 initCGIState : (InitialisedCGI TaskRunning)
-initCGIState = ICgi (CGIInf [] [] [] "" "" "")
+initCGIState = ICgi (CGIInf [] [] [] "" "" "" Z)
 
 
 showFormVal : (fty : FormTy) -> interpFormTy fty -> String
@@ -267,9 +267,9 @@ executeHandler vars handlers cgi = case (lookup "handler" vars) >>= parseFormFn 
 
 
 -- TODO: Action, also ideally we should have encoding/decoding instead of using text/plain
-mkForm : String -> String -> UserForm -> SerialisedForm
-mkForm name action frm = runPure [FR Z [] [] ("<table><form name=\"" ++ name ++ 
-                         "\" action=\"" ++ action ++ "\" method=\"post\">\n")] frm
+mkForm : Nat -> UserForm -> SerialisedForm
+mkForm num frm = runPure [FR Z [] [] ("<table><form name=\"" ++ (show num) ++ 
+                         "\" action=\"\" method=\"post\">\n")] frm
 
 
 -- In handle, then match on (ICGI s) to get access to state
@@ -280,7 +280,8 @@ addHeaders str st = record { Headers = Headers st ++ str ++ "\r\n" } st
 --addOutput : String -> CGIInfo -> CGIInfo
 addOutput str st = record { Output = Output st ++ str } st
 
-
+incrementFormCount : CGIInfo -> CGIInfo
+incrementFormCount st = record { FormNumber = FormNumber st + 1} st
 -- To create a CGI Program in Network.Cgi, one imports Network.Cgi,
 -- and then creates a function CGIInfo -> IO (a, CGIInfo)) which is passed
 -- into MkCGI.
@@ -368,8 +369,8 @@ output : String -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
 output s = (OutputData s)
 
 abstract
-addForm : String -> String -> UserForm -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
-addForm name action form = (AddForm name action form)
+addForm : UserForm -> Eff m [CGI (InitialisedCGI TaskRunning)] ()
+addForm form = (AddForm form)
 
 abstract
 handleForm : HandlerList -> Eff m [CGI (InitialisedCGI TaskRunning)] Bool
@@ -428,7 +429,7 @@ instance Handler Cgi IO where
     let cookies   = getVars [';'] cookie
             
     let cgi_info = (CGIInf get_vars post_vars cookies agent
-                    "Content-type: text/html\n" "")
+                    "Content-type: text/html\n" "" Z)
     k (ICgi cgi_info) ()
 
   handle (ICgi st) (OutputData s) k  = do let new_cgi_info = addOutput s st
@@ -444,7 +445,7 @@ instance Handler Cgi IO where
   handle (ICgi st) (RunAction ((ICgi _) :: env) act) k = do (((ICgi st') :: env'), result) <- runEnv ((ICgi st) :: env) act 
                                                             k (ICgi st') result
 
-  handle (ICgi st) (AddForm name action form) k = k (ICgi $ addOutput (mkForm name action form) st) ()
+  handle (ICgi st) (AddForm form) k = k (ICgi $ incrementFormCount $ addOutput (mkForm (FormNumber st) form) st) ()
 
   -- TODO: allow GET vars
   handle (ICgi st) (HandleForm handlers) k = do let post_vars = POST st

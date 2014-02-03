@@ -164,7 +164,7 @@ instance Handler Sqlite IO where
     is_null <- nullPtr res
     if (not is_null) then k (SQLitePS (ConnPtr conn) (PSPtr res)) ()
                      else do err <- foreignGetError (ConnPtr conn)
-                             putStrLn $ "BindInt error: " ++ (show err)
+             --                putStrLn $ "BindInt error: " ++ (show err)
                              k (SQLiteBindFail (ConnPtr conn) (PSPtr res) (BE pos err)) ()
  
   handle (SQLitePS (ConnPtr conn) (PSPtr res)) (BindFloat pos f) k = do
@@ -179,7 +179,7 @@ instance Handler Sqlite IO where
     is_null <- nullPtr res
     if (not is_null) then k (SQLitePS (ConnPtr conn) (PSPtr res)) ()
                      else do err <- foreignGetError (ConnPtr conn)
-                             putStrLn $ "BindStr error: " ++ (show err)
+               --              putStrLn $ "BindStr error: " ++ (show err)
                              k (SQLiteBindFail (ConnPtr conn) (PSPtr res) (BE pos err)) ()
 
   handle (SQLitePS (ConnPtr conn) (PSPtr res)) (BindNull pos) k = do
@@ -382,25 +382,44 @@ multiBind vals = do
 
 
 
-executeInsert' : StepResult -> EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) (SQLiteExecuting ValidRow))] 
+getRowCount' : StepResult -> EffM IO [SQLITE (Either (SQLiteExecuting InvalidRow) (SQLiteExecuting ValidRow))] 
                         [SQLITE ()] 
                         (Either QueryError Int)
-executeInsert' id_res = do
+getRowCount' id_res = do
   if_valid then do
     last_insert_id <- getColumnInt 0
     finaliseValid
     closeDB
-    Effects.pure $ Right last_insert_id
+    return $ Right last_insert_id
   else do finaliseInvalid
           closeDB
           case id_res of
-            NoMoreRows => Effects.pure . Left $ ExecError "Unable to get row count"
-            StepFail => Effects.pure . Left $ ExecError "Error whilst getting row count"          
-
+            NoMoreRows => return $ Left (ExecError "Unable to get row count")
+            StepFail => return $ Left (ExecError "Error whilst getting row count")
 
 getBindError : Maybe QueryError -> QueryError
 getBindError (Just (BindingError be)) = (BindingError be)
 getBindError _ = InternalError
+
+
+getRowCount : EffM IO [SQLITE (SQLiteConnected)] [SQLITE ()] (Either QueryError Int)
+getRowCount = do
+  let insert_id_sql = "SELECT last_insert_rowid()"
+  sql_prep_res <- prepareStatement insert_id_sql
+  if_valid then do
+    bind_res_2 <- finishBind
+    if_valid then do 
+      exec_res <- executeStatement
+      getRowCount' exec_res
+    else do
+      let be = getBindError bind_res_2
+      cleanupBindFail
+      return $ Left be
+  else do 
+    cleanupPSFail
+    return $ Left (getQueryError sql_prep_res)
+
+
 
 executeInsert : String -> 
                 String -> 
@@ -416,33 +435,20 @@ executeInsert db_name query bind_vals = do
         er_1 <- executeStatement
         if_valid then do
           finaliseValid
-          let insert_id_sql = "SELECT last_insert_rowid();"
-          sql_prep_res <- prepareStatement insert_id_sql
-          if_valid then do
-            bind_res_2 <- finishBind
-            if_valid then do 
-              exec_res <- executeStatement
-              executeInsert' exec_res
-            else do
-              let be = getBindError bind_res_2
-              cleanupBindFail
-              Effects.pure $ Left be
-          else do 
-            cleanupPSFail
-            Effects.pure . Left $ getQueryError sql_prep_res
+          getRowCount
         else do
           finaliseInvalid
           closeDB
-          Effects.pure $ Left (ExecError "Insert failed")
+          return $ Left (ExecError "Insert failed")
       else do
         let be = getBindError bind_res
         cleanupBindFail
-        Effects.pure $ Left be
+        return $ Left be
     else do
       cleanupPSFail
-      Effects.pure . Left $ getQueryError ps_res
+      return $ Left (getQueryError ps_res)
   else 
-    Effects.pure . Left $ getQueryError db_res
+    return $ Left (getQueryError db_res)
 
 
 -- Helper functions for selection from a DB
@@ -455,8 +461,8 @@ collectResults fn = do
     results <- fn
     step_res <- nextRow
     xs <- collectResults fn
-    Effects.pure $ results :: xs 
-  else Effects.pure []
+    return $ results :: xs 
+  else return []
 
 
 -- Convenience function to abstract around some of the boilerplate code.
@@ -478,16 +484,16 @@ executeSelect db_name q bind_vals fn = do
         res <- collectResults fn
         finaliseInvalid
         closeDB
-        Effects.pure $ Right res
+        return $ Right res
       else do
         let be = getBindError bind_res
         cleanupBindFail
-        Effects.pure $ Left be
+        return $ Left be
     else do
       cleanupPSFail
-      Effects.pure . Left $ getQueryError ps_res
+      return $ Left (getQueryError ps_res)
   else 
-    Effects.pure . Left $ getQueryError conn_res
+    return $ Left (getQueryError conn_res)
 
 -- Helper function for when there's no binding needed to the PS
 -- noBinds : EffM IO [SQLITE (
