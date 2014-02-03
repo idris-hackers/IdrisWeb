@@ -45,7 +45,7 @@ will result in an HTTP Error 500.
 
 By modelling CGI as a resource-dependent algebraic effect, we may enforce a
 resource usage protocol which
-prevents arbitrary IO from being performed and therefore
+prevents arbitrary I/O from being performed and therefore
 ensures that the headers are written correctly. We
 define an effect, \texttt{Cgi}, and an associated resource,
 \texttt{InitialisedCGI}, parameterised over the current state,
@@ -116,7 +116,8 @@ modifying the \texttt{CGIInfo} record. This data may then be printed at the end 
 program's execution, in accordance with the resource usage protocol.
 
 After the user code has finished execution, control returns to the library
-code. At this point, the state transitions to TaskCompleted, and the headers
+code. At this point, the state transitions to \texttt{TaskCompleted}, 
+and the headers
 are written.  Finally, the headers and content are written which completes the
 process. Since we parameterise the resource over a state, we may ensure that
 certain operations only happen in a particular prescribed order.
@@ -156,6 +157,7 @@ main = runCGI [initCGIState] sayHello
 \useverb{hworldcgi}
 % =================================================
 
+\noindent
 Here, \texttt{output} is a function which appends some output to the CGI output buffer, which is later written to the page.
 
 \subsection{Database access with SQLite}
@@ -176,6 +178,7 @@ determine attack vectors for SQL injection attacks.
 
 \begin{SaveVerbatim}{databaseeff}
 {-                           { Input resource type }    { Output resource type }             { Value }           -}
+
 data Sqlite : Effect where
   OpenDB            : DBName -> 
                       Sqlite ()                         (Either () SQLiteConnected)          (Either SQLiteCode ())
@@ -303,7 +306,9 @@ The \texttt{SQLitePSSuccess} resource indicates that a prepared statement has be
 
 SQLite operates by loading database rows into a buffer, the contents of which may then be accessed through several column access functions. After all rows returned by a query have been processed, no further calls to fetch more rows may be made. Additionally, no calls to column access functions may be made whilst there is no row being currently processed. 
 
-Through the use of dependent types, we may encode these invariants statically, using the \texttt{SQLiteExecuting} resource. This is parameterised by the \texttt{ExecutionResult} data type, which indicates whether there is currently a valid row in the buffer.
+We encode these invariants using the \texttt{SQLiteExecuting}
+resource. This is parameterised by \texttt{ExecutionResult},
+which indicates whether there is currently a valid row in the buffer:
 
 \begin{SaveVerbatim}{sqliteexecuting}
 
@@ -318,7 +323,7 @@ data SQLiteExecuting : ExecutionResult -> Type where
 \useverb{sqliteexecuting}
 \noindent
 Column access functions may only be called when there is a valid row in the
-buffer, as signified by the input resources:
+buffer, as specified by the input resources:
 
 \begin{SaveVerbatim}{getcoltext}
 
@@ -332,7 +337,7 @@ GetColumnText : Column ->
 
 \noindent
 In order to provide the necessary static guarantee that there is a valid row to
-process in the buffer, we make use of the \texttt{if\_valid} construct, as described in Section ~\ref{rp-effects}. The
+process in the buffer, we make use of \texttt{if\_valid}, as described in Section ~\ref{rp-effects}. The
 \texttt{nextRow} function will either fetch a row into the buffer, or indicate
 that a row could not be loaded, as shown by its type:
 
@@ -347,7 +352,9 @@ nextRow : EffM IO [SQLITE (SQLiteExecuting ValidRow)]
 \useverb{nextrow}
 
 \noindent
-The \texttt{if\_valid} construct provides failure checking functionality, allowing different operations to be performed depending on whether or not a row was successfully fetched for processing.
+The \texttt{if\_valid} construct checks for failure,
+allowing different operations to be executed depending on whether or not a row
+was successfully fetched for processing.
 %If a failure happens at any point during the computation, the resource is
 %updated to reflect the failure: if, for example, the library failed to create a
 %connection to the database, the resource value would be updated to
@@ -539,6 +546,28 @@ the session.
 %which is serialised alongside a type tag for storage in the database.
 %TODO: Fix up the labels
 
+\begin{figure}[htpb!]
+\centering
+\scalebox{0.8}{
+\begin{tikzpicture}[>=latex]
+  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, node distance=7.5em, font={\sffamily\bfseries}]
+  
+  \tikzstyle{stateEdgePortion} = [black,thick];
+  \tikzstyle{stateEdge} = [stateEdgePortion,->];
+  \tikzstyle{edgeLabel} = [pos=0.5, font={\sffamily\small}];
+
+  \node[initial,state] (A)              {SessionClosed};
+  \node[state]         (B) [below of=A] {SessionOpen};
+
+  \path (A) edge[stateEdge]   node[edgeLabel, xshift=-1cm, text width=3cm] {\texttt{loadSession, createSession}} (B)
+        (B) edge[stateEdge, bend right=80]   node[edgeLabel, xshift=6em, text width=3cm] {\texttt{writeToDB, discardSessionChanges, deleteSession}} (A)
+            edge[stateEdge, loop left]   node[edgeLabel] {\texttt{updateSession}} (B);
+\end{tikzpicture}
+}
+\caption{Session Handler Resource Usage Protocol}
+\label{fig:sessionstates}
+\end{figure}
+
 \begin{SaveVerbatim}{sessioneff}
 {-                        { Input resource type }            { Output resource type }   { Value }        -}
 
@@ -563,28 +592,6 @@ data Session : Effect where
 \caption{Session Effect}
 \label{fig:sessioneffect}
 \end{figure*}
-
-\begin{figure}[htpb!]
-\centering
-\scalebox{0.8}{
-\begin{tikzpicture}[>=latex]
-  \tikzstyle{state} = [draw, very thick, fill=white, rectangle, minimum height=3em, minimum width=7em, node distance=7.5em, font={\sffamily\bfseries}]
-  
-  \tikzstyle{stateEdgePortion} = [black,thick];
-  \tikzstyle{stateEdge} = [stateEdgePortion,->];
-  \tikzstyle{edgeLabel} = [pos=0.5, font={\sffamily\small}];
-
-  \node[initial,state] (A)              {SessionClosed};
-  \node[state]         (B) [below of=A] {SessionOpen};
-
-  \path (A) edge[stateEdge]   node[edgeLabel, xshift=-1cm, text width=3cm] {\texttt{loadSession, createSession}} (B)
-        (B) edge[stateEdge, bend right=80]   node[edgeLabel, xshift=6em, text width=3cm] {\texttt{writeToDB, discardSessionChanges, deleteSession}} (A)
-            edge[stateEdge, loop left]   node[edgeLabel] {\texttt{updateSession}} (B);
-\end{tikzpicture}
-}
-\caption{Session Handler Resource Usage Protocol}
-\label{fig:sessionstates}
-\end{figure}
 
 Figure ~\ref{fig:sessionstates} shows the resource usage protocol associated
 with the session handler, and Figure \ref{fig:sessioneffect} the corresponding

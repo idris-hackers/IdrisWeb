@@ -107,14 +107,17 @@ When this CGI application is invoked, it will begin by outputting a form to the
 page, requesting a name from the user. Upon submission of the form, the form
 handler will be invoked, and the name will be used in the output.
 
-In Sections ~\ref{formcons} and ~\ref{formhandling}, we examine implementation
-of the form-handling system: namely, the effect which allows the creation of
+In Sections~\ref{formcons} and~\ref{formhandling}, we examine implementation
+of the form-handling system: the effect which allows the creation of
 forms, and the handling code which deserialises the data and passes it to the
 user-specified handler function.  
 
 \subsection{Form Construction}
 \label{formcons}
-Each form element is specified to hold a particular type of data, which, assuming that the correct type of data is specified by the user, is passed directly to the handler function. In order to encapsulate this, we firstly define the allowed data types as part of an algebraic data type, \texttt{FormTy}.
+Each form element holds a value of a specific type, which, assuming that the
+correct type of data is given by the user, is passed directly to the
+handler function. In order to encapsulate this, we firstly define the allowed
+data types as part of an algebraic data type, \texttt{FormTy}.
 
 \begin{SaveVerbatim}{formty}
 
@@ -126,8 +129,10 @@ data FormTy = FormString | FormInt
 \useverb{formty}
 
 \noindent
-Since types in \idris{} are first-class, we may use this to convert
-between abstract and concrete representations of allowed form types:
+%Since types in \idris{} are first-class, 
+We convert
+from an abstract to a concrete representation of an allowed form type as
+follows:
 
 \begin{SaveVerbatim}{interpformty}
 
@@ -187,7 +192,7 @@ The \texttt{using} notation indicates that where \texttt{G} and \texttt{E} occur
 %the given resource type.
 
 The general process of form construction is illustrated by the \texttt{AddTextBox}
-and \texttt{Submit} operations of the \texttt{Form} effect, shown in Figure ~\ref{fig:formeffect}. These use the resource associated with the effect, \texttt{FormRes}, to construct the form. Adding a field such as a text box adds a new type,
+and \texttt{Submit} operations of the \texttt{Form} effect, shown in Figure~\ref{fig:formeffect}. These use the resource associated with the effect, \texttt{FormRes}, to construct the form. Adding a field such as a text box adds a new type,
 \texttt{fty} to the list of field types, carried in the resource. When the form
 is complete, the \texttt{Submit} operation adds a submit button and returns the
 HTML text for the form, flushing the list of field types, and using it to
@@ -226,7 +231,7 @@ for the form.
 useEffects : (effs : List WebEffect) ->
              EffM m [FORM (FormRes G E)] 
                     [FORM (FormRes G effs)] ()
-useEffects effs = (UseEffects effs)
+useEffects effs = UseEffects effs
 
 \end{SaveVerbatim}
 \useverb{useeffs}
@@ -364,7 +369,7 @@ syntax
 \useverb{syntaxhandler}
 
 \noindent
-We may then define handlers in a more intuitive fashion, without being
+We may then define handlers in a more readable fashion, without being
 concerned with the implementation details. This allows us to write a handler
 with one String argument, making use of the CGI effect, associated with the
 \texttt{echo} handler function as follows:
@@ -390,6 +395,7 @@ HandlerList = List HandlerFn
 \end{SaveVerbatim}
 \useverb{handlerlist}
 
+\noindent
 To enforce the requirement that a supplied handler function must be in the
 list of available handlers, and therefore allow us to retrieve the name with
 which to serialise the handler, we require a \textit{list membership proof},
