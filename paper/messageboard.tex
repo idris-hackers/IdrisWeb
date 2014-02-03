@@ -28,10 +28,8 @@ which we initialise with empty initial environments for the \texttt{CGI},
 \begin{SaveVerbatim}{msgmain}
 
 main : IO ()
-main = do (runCGI [initCGIState, 
-                  InvalidSession, ()] 
-           handleRequest)
-          return ()
+main = runCGI [initCGIState, InvalidSession, ()] 
+              handleRequest
 
 \end{SaveVerbatim}
 \useverb{msgmain}
@@ -234,6 +232,8 @@ invoked, and a session is initialised with the user ID retrieved from the
 database. The session ID is then set as a cookie using the CGI effect, so that
 it may be used in subsequent requests. Any failures, for example with creating
 a new session or querying the database, are reported to the user.
+Implementations for the insertion and display of posts, alongside registration,
+follow the same structure.
 
 \begin{SaveVerbatim}{handlelogin}
 handleLoginForm (Just name) (Just pwd) = do
@@ -260,9 +260,6 @@ handleLoginForm (Just name) (Just pwd) = do
 \caption{Authentication}
 \label{fig:handlelogin}
 \end{figure}
-
-Implementations for the insertion and display of posts, alongside registration,
-follow the same structure.
 
 Although we have described a relatively simple application, we have shown that
 through the use of embedded domain-specific languages, 
