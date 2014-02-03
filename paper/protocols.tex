@@ -397,7 +397,7 @@ of all staff working in a given department.
 %Since the
 %\texttt{Effects} library overloads the bind operator, we may make use of
 %\texttt{do}-notation, facilitating the usage of an imperative style.
-We define a function \texttt{textSel} of type:
+We define a function \texttt{textSelect} of type:
 
 \noindent
 \begin{SaveVerbatim}{sqleffty}
@@ -432,15 +432,15 @@ testSelect dept = do
         results <- collectResults
         finaliseInvalid
         closeDB
-        Effects.pure $ Right results
+        return $ Right results
       else do
         cleanupBindFail
-        Effects.pure $ Left (getBindError bind_res)
+        return $ Left (getBindError bind_res)
     else do
       cleanupPSFail
-      Left $ getQueryError sql_prep_res
+      return $ Left (getQueryError sql_prep_res)
   else do 
-    Effects.pure $ Left (getQueryError db_res)
+    return $ Left (getQueryError db_res)
 \end{SaveVerbatim}
 
 \begin{figure}[h]
